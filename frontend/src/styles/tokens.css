@@ -1,0 +1,84 @@
+/* Brutal 2.0: the Brutal universe of cloutlab.studio, for a tool used all day.
+   Cream paper, black ink, 3px rules, square corners, hard offset shadows.
+   Yellow only on things you can press, pink when they are hovered, blue ink
+   for a live browser, red only for failures and destructive actions. */
+
+@font-face {
+  font-family: "Inter Tight";
+  font-weight: 400;
+  src: url("../../../src/assets/fonts/InterTight-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Inter Tight";
+  font-weight: 500;
+  src: url("../../../src/assets/fonts/InterTight-Medium.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Inter Tight";
+  font-weight: 600;
+  src: url("../../../src/assets/fonts/InterTight-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Inter Tight";
+  font-weight: 900;
+  src: url("../../../src/assets/fonts/InterTight-Black.ttf") format("truetype");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-weight: 400;
+  src: url("../../../src/assets/fonts/IBMPlexMono-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-weight: 600;
+  src: url("../../../src/assets/fonts/IBMPlexMono-SemiBold.ttf") format("truetype");
+}
+
+:root {
+  /* The site's Brutal tokens */
+  --t-bg: #f5f0e1;
+  --t-bg-2: #ebe3cc;
+  --t-fg: #0a0a0a;
+  --t-muted: #3a3a3a;
+  --t-accent: #ffe14d;
+  --t-accent-2: #ff5c8a;
+  --t-accent-3: #3d7bff;
+  --t-accent-ink: #1f4fe0;
+  --t-on-accent: #0a0a0a;
+  --t-surface: #ffffff;
+  --t-line: #0a0a0a;
+  --t-focus: #1f4fe0;
+  --t-border-w: 3px;
+  --t-hard: 6px 6px 0 #0a0a0a;
+  --t-hard-sm: 4px 4px 0 #0a0a0a;
+  --t-hard-lg: 10px 10px 0 #0a0a0a;
+  --t-ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --t-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --t-dur: 0.38s;
+  --t-dur-fast: 0.16s;
+
+  /* The app's states */
+  --dim: #6b6658;
+  --rule-soft: #b8b09a;
+  --accent-soft: #fff3b0;
+  --hover-row: #fff8d6;
+  --live: #1f4fe0;
+  --live-tint: #e3eafd;
+  --success: #1f7a50;
+  --error: #d7263d;
+  --error-deep: #a81a2e;
+  --warning: #8a5a00;
+  --warn-tint: #fff3b0;
+  --warn-text: #5e3e00;
+  --rail: #0a0a0a;
+  --rail-deep: #1e1e1e;
+  --rail-ink: #f5f0e1;
+  --rail-muted: #a8a290;
+  --rail-line: #3a3a3a;
+
+  --font-display: "Inter Tight", system-ui, sans-serif;
+  --font-body: "Inter Tight", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  color-scheme: light;
+}

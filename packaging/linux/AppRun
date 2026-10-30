@@ -1,0 +1,9 @@
+#!/bin/sh
+here="$(dirname "$(readlink -f "$0")")"
+# Where AppArmor forbids unprivileged user namespaces (Ubuntu 23.10+), the
+# window's Chromium sandbox cannot start from an AppImage, which no profile
+# covers: run it without, as other Chromium-based AppImages do.
+if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
+    export QTWEBENGINE_DISABLE_SANDBOX=1
+fi
+exec "$here/usr/lib/cloutfox/cloutfox" "$@"

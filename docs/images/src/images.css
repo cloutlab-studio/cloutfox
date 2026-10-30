@@ -1,0 +1,321 @@
+@font-face {
+  font-family: "Inter Tight";
+  font-weight: 500;
+  src: url("../../../src/assets/fonts/InterTight-Medium.ttf");
+}
+@font-face {
+  font-family: "Inter Tight";
+  font-weight: 600;
+  src: url("../../../src/assets/fonts/InterTight-SemiBold.ttf");
+}
+@font-face {
+  font-family: "Inter Tight";
+  font-weight: 900;
+  src: url("../../../src/assets/fonts/InterTight-Black.ttf");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-weight: 400;
+  src: url("../../../src/assets/fonts/IBMPlexMono-Regular.ttf");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-weight: 600;
+  src: url("../../../src/assets/fonts/IBMPlexMono-SemiBold.ttf");
+}
+
+:root {
+  --bg: #f5f0e1;
+  --bg-2: #ebe3cc;
+  --fg: #0a0a0a;
+  --muted: #3a3a3a;
+  --yellow: #ffe14d;
+  --pink: #ff5c8a;
+  --blue: #3d7bff;
+  --white: #ffffff;
+  --display: "Inter Tight", sans-serif;
+  --mono: "IBM Plex Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+body {
+  background: #222;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 40px;
+  padding: 40px;
+}
+
+.paper {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--bg);
+  background-image: radial-gradient(rgb(10 10 10 / 0.18) 1.6px, transparent 2px);
+  background-size: 28px 28px;
+  color: var(--fg);
+  font-family: var(--mono);
+}
+
+.chip {
+  display: inline-block;
+  font-family: var(--mono);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 3px solid var(--fg);
+  box-shadow: 4px 4px 0 var(--fg);
+  background: var(--white);
+}
+
+.sticker {
+  position: absolute;
+  font-family: var(--display);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  word-spacing: 0.1em;
+  border: 3px solid var(--fg);
+  box-shadow: 5px 5px 0 var(--fg);
+  padding: 8px 18px;
+}
+
+.yellow {
+  background: var(--yellow);
+}
+.pink {
+  background: var(--pink);
+}
+.blue {
+  background: var(--blue);
+  color: var(--white);
+}
+
+.win {
+  border: 4px solid var(--fg);
+  background: var(--white);
+  overflow: hidden;
+}
+.win .bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 4px solid var(--fg);
+  background: var(--white);
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.win .bar i {
+  width: 15px;
+  height: 15px;
+  border: 3px solid var(--fg);
+  border-radius: 50%;
+}
+.win .bar i:nth-child(1) {
+  background: var(--pink);
+}
+.win .bar i:nth-child(2) {
+  background: var(--yellow);
+}
+.win .bar i:nth-child(3) {
+  background: var(--blue);
+}
+.win .bar span {
+  margin-left: 8px;
+}
+.win img {
+  display: block;
+}
+
+/* Banner and social preview, 1280 x 640 */
+.banner {
+  width: 1280px;
+  height: 640px;
+  border: 4px solid var(--fg);
+  padding: 56px 60px;
+  display: grid;
+  grid-template-columns: 560px 1fr;
+  gap: 48px;
+}
+.banner .copy {
+  display: flex;
+  flex-direction: column;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 32px;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+.brand img {
+  width: 52px;
+  height: 52px;
+  border: 3px solid var(--fg);
+  box-shadow: 4px 4px 0 var(--fg);
+}
+.banner h1 {
+  margin-top: 34px;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 72px;
+  line-height: 0.94;
+  letter-spacing: -0.035em;
+  word-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.mark {
+  display: inline-block;
+  white-space: nowrap;
+  margin-top: 10px;
+  padding: 2px 12px 6px;
+  background: var(--yellow);
+  border: 4px solid var(--fg);
+  box-shadow: 6px 6px 0 var(--fg);
+  font-size: 50px;
+}
+.banner .lead {
+  margin-top: 30px;
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 21px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.banner .chips {
+  margin-top: auto;
+  display: flex;
+  gap: 14px;
+}
+.banner .chips .chip {
+  font-size: 17px;
+  padding: 7px 12px;
+}
+.banner .chips .chip:first-child {
+  background: var(--yellow);
+}
+.banner .side {
+  position: relative;
+  align-self: center;
+}
+.banner .win {
+  width: 600px;
+  box-shadow: 14px 14px 0 var(--pink);
+  transform: rotate(-2deg);
+}
+.banner .win .shot {
+  width: 600px;
+  height: 380px;
+  overflow: hidden;
+}
+.banner .win .shot img {
+  width: 1000px;
+  transform-origin: 0 0;
+}
+:lang(ru) .banner .mark {
+  font-size: 44px;
+}
+.banner .s1 {
+  top: -40px;
+  right: -10px;
+  font-size: 26px;
+  transform: rotate(5deg);
+}
+.banner .s2 {
+  bottom: -50px;
+  left: -30px;
+  font-size: 24px;
+  transform: rotate(-4deg);
+}
+
+/* Features, 1280 wide */
+.features {
+  width: 1280px;
+  border: 4px solid var(--fg);
+  padding: 52px 56px 60px;
+}
+.features h2 {
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 56px;
+  letter-spacing: -0.03em;
+  word-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.features h2 .mark {
+  font-size: 44px;
+  margin: 0 0 0 10px;
+  vertical-align: 6px;
+}
+.grid {
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 28px;
+}
+.card {
+  border: 4px solid var(--fg);
+  background: var(--white);
+  box-shadow: 8px 8px 0 var(--fg);
+  display: flex;
+  flex-direction: column;
+}
+.card header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 4px solid var(--fg);
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+  word-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.card header b {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 15px;
+  background: var(--white);
+  color: var(--fg);
+  border: 3px solid var(--fg);
+  padding: 2px 7px;
+}
+.card p {
+  padding: 16px 18px 20px;
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 1.42;
+  color: var(--muted);
+}
+
+/* Framed screenshots */
+.screen {
+  width: 1560px;
+  padding: 56px 64px 72px;
+  border: 4px solid var(--fg);
+}
+.screen .win {
+  width: 1408px;
+  box-shadow: 14px 14px 0 var(--fg);
+}
+.screen .label {
+  position: absolute;
+  top: 22px;
+  right: 48px;
+  font-size: 26px;
+  transform: rotate(3deg);
+}

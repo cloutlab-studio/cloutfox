@@ -1,0 +1,47 @@
+name: Bug
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Before sending, remove your proxies, logins, IPs and account names from the text and the log. Report security issues privately, see SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: CloutFox version
+      placeholder: "3.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it is installed
+      options: [exe, msi, zip, deb, rpm, AUR, AppImage, tar.gz, from source]
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: System
+      placeholder: "Windows 11 23H2, Ubuntu 24.04, Fedora 42"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did
+      placeholder: "1. Created a profile with a SOCKS5 proxy\n2. Clicked Launch"
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What you expected and what happened
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Lines from the Activity Log or from logs/cloutfox_YYYYMMDD.log (and logs/crash.log if the app does not start) in the data folder
+      render: text

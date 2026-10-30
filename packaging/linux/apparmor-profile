@@ -1,0 +1,15 @@
+# Ubuntu 23.10 and newer allow unprivileged user namespaces only to programs with
+# an AppArmor profile that says so. Qt WebEngine (the CloutFox window) builds its
+# sandbox in one, so the package installs this profile where AppArmor 4 runs.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile cloutfox /opt/cloutfox/python/bin/python3.12 flags=(unconfined) {
+  userns,
+  include if exists <local/cloutfox>
+}
+
+profile cloutfox-webengine /opt/cloutfox/python/lib/python3.12/site-packages/PyQt6/Qt6/libexec/QtWebEngineProcess flags=(unconfined) {
+  userns,
+  include if exists <local/cloutfox-webengine>
+}

@@ -1,0 +1,175 @@
+name: Release
+
+# A tag vX.Y.Z builds every package, installs each one on a clean system and
+# opens a draft release with them; a maintainer publishes the draft by hand.
+# A tag moved onto a fixed commit replaces the files of its existing release.
+# Run it by hand (workflow_dispatch) to get the packages as artifacts only.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    name: Linux packages
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python packaging/build.py bundle
+      - run: python packaging/build.py linux
+      - run: python packaging/build.py source
+      - name: Arch dependencies for the tar.gz test
+        run: python -c "import sys; sys.path.insert(0, 'packaging'); import build; print(' '.join(build.linux_depends()[2]))" > dist/arch-depends.txt
+      - uses: actions/upload-artifact@v5
+        with:
+          name: linux
+          path: dist/
+          if-no-files-found: error
+          include-hidden-files: true
+
+  linux-test:
+    name: Install on ${{ matrix.image }}
+    needs: linux
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: "debian:12", package: "*.deb" }
+          - { image: "ubuntu:22.04", package: "*.deb" }
+          - { image: "ubuntu:24.04", package: "*.deb" }
+          - { image: "fedora:latest", package: "*.rpm" }
+          - { image: "opensuse/tumbleweed:latest", package: "*.rpm" }
+          - { image: "archlinux:latest", package: "*-linux-x86_64.tar.gz" }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v6
+        with:
+          name: linux
+          path: dist
+      - name: Install and start
+        run: |
+          pkg=$(ls dist/${{ matrix.package }} | head -n 1)
+          docker run --rm -v "$PWD:/src:ro" "${{ matrix.image }}" \
+            sh /src/packaging/test_package.sh "/src/$pkg" "$(cat dist/arch-depends.txt)"
+      - name: AppImage starts
+        if: matrix.image == 'ubuntu:24.04'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libnss3 libasound2t64 >/dev/null
+          app=$(ls dist/*.AppImage)
+          chmod +x "$app"
+          QT_QPA_PLATFORM=offscreen CLOUTFOX_HOME="$RUNNER_TEMP/cf" APPIMAGE_EXTRACT_AND_RUN=1 \
+            timeout 120 "$app" > "$RUNNER_TEMP/appimage.log" 2>&1 &
+          for _ in $(seq 60); do
+            curl -sf http://127.0.0.1:8000/api/v1/info && exit 0
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/appimage.log"
+          exit 1
+
+  windows:
+    name: Windows packages
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: WiX and Inno Setup
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.UI.wixext/5.0.2
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
+            if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) {
+              choco install innosetup -y --no-progress
+            }
+          }
+      - run: python packaging/build.py bundle
+      - run: python packaging/build.py windows
+      - name: MSI installs, starts and uninstalls
+        run: |
+          $msi = (Get-ChildItem dist\*.msi).FullName
+          $p = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /l*v `"$env:RUNNER_TEMP\msi.log`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\msi.log" -Tail 50; throw "msiexec $($p.ExitCode)" }
+          $exe = "C:\Program Files\CloutFox\CloutFox.exe"
+          if (-not (Test-Path $exe)) { throw "not installed: $exe" }
+          if (-not (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\CloutFox.lnk")) { throw "no Start menu shortcut" }
+          $env:CLOUTFOX_HOME = "$env:RUNNER_TEMP\cf-msi"
+          Start-Process $exe
+          $info = $null
+          foreach ($i in 1..60) { try { $info = Invoke-RestMethod http://127.0.0.1:8000/api/v1/info; break } catch { Start-Sleep 2 } }
+          Get-Process pythonw, CloutFox, QtWebEngineProcess -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime
+          Get-Process pythonw -ErrorAction SilentlyContinue | Stop-Process -Force
+          Get-Content "$env:CLOUTFOX_HOME\logs\*.log" -ErrorAction SilentlyContinue
+          if (-not $info) { throw "the app did not start" }
+          $info
+          $p = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "uninstall $($p.ExitCode)" }
+          if (Test-Path $exe) { throw "still installed" }
+      - name: Setup exe installs, starts and uninstalls
+        run: |
+          $setup = (Get-ChildItem dist\*-setup-x64.exe).FullName
+          $p = Start-Process $setup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /CURRENTUSER /NORESTART" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "setup $($p.ExitCode)" }
+          $dir = "$env:LOCALAPPDATA\Programs\CloutFox"
+          if (-not (Test-Path "$dir\CloutFox.exe")) { throw "not installed in $dir" }
+          $env:CLOUTFOX_HOME = "$env:RUNNER_TEMP\cf-setup"
+          Start-Process "$dir\CloutFox.exe"
+          $info = $null
+          foreach ($i in 1..60) { try { $info = Invoke-RestMethod http://127.0.0.1:8000/api/v1/info; break } catch { Start-Sleep 2 } }
+          Get-Process pythonw -ErrorAction SilentlyContinue | Stop-Process -Force
+          Get-Content "$env:CLOUTFOX_HOME\logs\*.log" -ErrorAction SilentlyContinue
+          if (-not $info) { throw "the app did not start" }
+          $info
+          $p = Start-Process "$dir\unins000.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "uninstall $($p.ExitCode)" }
+          Start-Sleep 5
+          if (Test-Path "$dir\CloutFox.exe") { throw "still installed" }
+      - uses: actions/upload-artifact@v5
+        with:
+          name: windows
+          path: |
+            dist/*.msi
+            dist/*.exe
+            dist/*.zip
+          if-no-files-found: error
+
+  release:
+    name: Draft release
+    needs: [linux, linux-test, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v6
+        with:
+          path: artifacts
+      - name: Collect files and checksums
+        run: |
+          mkdir dist
+          find artifacts -type f ! -name arch-depends.txt ! -path '*/aur/*' -exec cp {} dist/ \;
+          python3 packaging/build.py checksums
+          python3 packaging/build.py notes > notes.md
+      - name: Create the draft or replace the files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --clobber dist/*
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+              --title "CloutFox ${GITHUB_REF_NAME#v}" --notes-file notes.md dist/*
+          fi

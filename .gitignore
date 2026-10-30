@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+/build/
+/dist/
+.venv
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Panel toolchain (the built panel in src/ui/dist is committed)
+node_modules
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Runtime data when CLOUTFOX_HOME is not set: profiles, cookies, keys, logs
+/profiles.json
+/camoufox_data/
+/encrypted_data/
+/vault.json
+/profile_keys.json
+/settings.json
+/extensions/
+/bin/
+/logs/
+*.log
+*.cfxbak
+
+# Tooling artefacts
+uv.lock
+e2e-output/
+.omc/
+.impeccable/
+.idea/
+.vscode/

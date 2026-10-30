@@ -1,0 +1,40 @@
+<!-- CloutFox MSI for WiX 5. Built by packaging/build.py windows, which passes the defines. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="CloutFox" Manufacturer="Cloutlab" Version="$(var.Version)"
+           UpgradeCode="657C3FF9-AC79-4562-8E9B-6826A2ABFE88" Scope="perMachine" Compressed="yes">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of CloutFox is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="CloutFoxIcon" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="CloutFoxIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/cloutlab-studio/cloutfox" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/cloutlab-studio/cloutfox/issues" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+    <ui:WixUI Id="WixUI_InstallDir" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="CloutFox" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.BundleDir)\**" />
+    </ComponentGroup>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut">
+        <Shortcut Id="CloutFoxShortcut" Name="CloutFox" Description="Anti-detect browser profile manager"
+                  Target="[INSTALLFOLDER]CloutFox.exe" WorkingDirectory="INSTALLFOLDER" Icon="CloutFoxIcon">
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="Cloutlab.CloutFox" />
+        </Shortcut>
+        <RegistryValue Root="HKLM" Key="Software\Cloutlab\CloutFox" Name="StartMenuShortcut"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="CloutFox" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Package>
+</Wix>

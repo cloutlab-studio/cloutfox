@@ -1,0 +1,169 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--t-bg);
+  /* Faint dot grid: paper, not a flat fill. */
+  background-image: radial-gradient(rgb(10 10 10 / 0.07) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+  color: var(--t-fg);
+  font: 400 14px/1.4 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#app {
+  height: 100%;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: var(--t-accent);
+  color: var(--t-fg);
+}
+
+:focus-visible {
+  outline: 3px solid var(--t-focus);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: var(--t-bg);
+  border-left: 2px solid var(--t-line);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--t-fg);
+  border: 3px solid var(--t-bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--t-accent-2);
+}
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.04em;
+  word-spacing: 0.14em;
+  line-height: 0.93;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.label {
+  font: 600 11px/1.2 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.dim {
+  color: var(--dim);
+}
+
+.selectable {
+  user-select: text;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+/* Motion off: the system asks for less, or the person chose it in Settings. */
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+}
+
+:root {
+  --loops: running;
+}
+
+/* The window is in the background: looping decoration holds still, since every
+   frame costs CPU in Qt WebEngine. Infinite animations read --loops. */
+:root[data-away] {
+  --loops: paused;
+}
+
+:root[data-cursor="on"],
+:root[data-cursor="on"] * {
+  cursor: none !important;
+}
+:root[data-cursor="on"] input,
+:root[data-cursor="on"] textarea {
+  cursor: text !important;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@keyframes shake {
+  10%,
+  90% {
+    transform: translateX(-2px);
+  }
+  20%,
+  80% {
+    transform: translateX(4px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-7px);
+  }
+  40%,
+  60% {
+    transform: translateX(7px);
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
