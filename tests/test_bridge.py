@@ -130,3 +130,35 @@ def test_panel_ready_is_the_liveness_signal(bridge, monkeypatch):
     later = time.monotonic() + 10_000
     monkeypatch.setattr(time, "monotonic", lambda: later)
     assert bridge._panel_alive() is False
+
+
+def test_update_check_says_what_github_has(bridge, monkeypatch):
+    from src.services import updates
+
+    monkeypatch.setattr(
+        updates,
+        "latest",
+        lambda: updates.Release(
+            "99.0.0", "https://github.com/cloutlab-studio/cloutfox/releases/tag/v99.0.0"
+        ),
+    )
+    result = bridge.update_check()
+    assert result["available"] is True
+    assert result["latest"] == "99.0.0"
+    assert result["url"].endswith("v99.0.0")
+    assert "99.0.0" in result["message"]
+
+    monkeypatch.setattr(
+        updates,
+        "latest",
+        lambda: updates.Release(
+            "0.0.1", "https://github.com/cloutlab-studio/cloutfox/releases/tag/v0.0.1"
+        ),
+    )
+    assert bridge.update_check()["available"] is False
+
+    def offline():
+        raise updates.UpdateError("Network is unreachable")
+
+    monkeypatch.setattr(updates, "latest", offline)
+    assert "Network is unreachable" in bridge.update_check()["error"]

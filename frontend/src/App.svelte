@@ -6,11 +6,13 @@
   import { init } from "./lib/bridge";
   import { collectGarbage } from "./lib/gc";
   import { setStrings, t } from "./lib/i18n.svelte";
+  import { open } from "./lib/overlay.svelte";
   import { onSystemMotion, watchFocus } from "./lib/motion";
   import { closeTop } from "./lib/overlay.svelte";
   import { panelStats, startHeartbeat } from "./lib/panel";
   import { app, applySettings, opened } from "./lib/store.svelte";
   import { toast } from "./lib/toast.svelte";
+  import UpdatesIntro from "./dialogs/UpdatesIntro.svelte";
   import Lock from "./screens/Lock.svelte";
   import Shell from "./screens/Shell.svelte";
   import Help from "./screens/Help.svelte";
@@ -35,6 +37,7 @@
     } else {
       await api.start();
       await opened();
+      if (!boot.settings.update_asked) void open(UpdatesIntro);
     }
   });
 

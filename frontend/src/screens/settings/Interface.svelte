@@ -65,6 +65,12 @@
     />
   </Field>
   <Switch checked={s.cursor} label={t("ui_cursor")} onchange={(v) => saveSettings({ cursor: v })} />
+  <Switch
+    checked={s.auto_update_check}
+    label={t("ui_auto_update")}
+    onchange={(v) => saveSettings({ auto_update_check: v })}
+  />
+  <p class="hint">{t("ui_auto_update_hint")}</p>
 </Section>
 
 <style>

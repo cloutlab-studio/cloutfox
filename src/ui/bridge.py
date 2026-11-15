@@ -81,6 +81,9 @@ _UI_SETTINGS = {
     "motion": str,
     "cursor": bool,
     "folders_closed": list,
+    "auto_update_check": bool,
+    "update_asked": bool,
+    "update_skipped": str,
 }
 _COOKIE_EXT = {"json": "json", "netscape": "txt"}
 # A renderer above this heap leaks: the panel draws frames all day (see window.py).
@@ -127,6 +130,9 @@ class Bridge:
         self._panel_beat = 0.0
         # Renderer crashes in this run, counted by the window; the page shows it.
         self._panel_restarts = 0
+        # The last answer from GitHub about a newer version, if any.
+        self._update: dict | None = None
+        self._update_lock = threading.Lock()
         if language := container.settings.current.language:
             set_language(language)
 
@@ -294,6 +300,7 @@ class Bridge:
         if self._c.security.locked:
             return _error(get_string("password_wrong"))
         self._open()
+        self._update_tick()
         return {}
 
     def set_language(self, code: str) -> dict:
@@ -314,6 +321,7 @@ class Bridge:
             "profiles": [self._row(p, running) for p in pm.list_profiles()],
             "help": [r.public() for r in c.human_requests.pending()],
             "master": c.vault.enabled,
+            "update": self._update,
         }
 
     def log_history(self) -> list[dict]:
@@ -1140,6 +1148,96 @@ class Bridge:
                 return {"ok": True}
         except OSError as e:
             return {"ok": False, "error": str(e)}
+
+    def update_check(self) -> dict:
+        """Ask GitHub for the newest release: opt-in, one request, nothing about this machine."""
+        return self._check_updates(quiet=False)
+
+    def update_dismiss(self, version: str | None = None) -> dict:
+        """Hide the banner for this version (the next one shows again)."""
+        latest = version or (self._update or {}).get("latest", "")
+        self._c.settings.update(update_skipped=latest)
+        if self._update is not None:
+            self._update = {**self._update, "skipped": True}
+        self._changed()
+        return {}
+
+    def update_install(self) -> dict:
+        """Download the release file of this platform and start its installer."""
+        from ..api.app import VERSION
+        from ..services import updates
+
+        info = self._update or self._check_updates(quiet=False)
+        if info.get("error"):
+            return info
+        if not info.get("available"):
+            return _error(get_string("update_none", version=VERSION))
+        target = updates.plan(info["latest"])
+        if target is None:
+            message = get_string("update_no_install", url=info["url"])
+            self._log(message)
+            return _error(message)
+        self._log(get_string("update_downloading", version=info["latest"]))
+        try:
+            key = updates.install(target, info["latest"], say=lambda line: self._log(line))
+        except updates.UpdateError as e:
+            message = get_string("update_install_failed", error=e)
+            self._log(message)
+            return _error(message)
+        message = get_string(key)
+        self._log(message)
+        return {"message": message, "kind": target.kind}
+
+    def _check_updates(self, quiet: bool) -> dict:
+        """One request to GitHub; with `quiet` a failure stays in the log."""
+        from ..api.app import VERSION
+        from ..services import updates
+
+        with self._update_lock:
+            try:
+                release = updates.latest()
+            except updates.UpdateError as e:
+                if not quiet:
+                    message = get_string("update_check_failed", error=e)
+                    self._log(message)
+                else:
+                    logger.debug("Update check failed: %s", e)
+                return _error(str(e)) if not quiet else {}
+            newer = updates.is_newer(release.version, VERSION)
+            skipped = self._c.settings.current.update_skipped == release.version
+            self._update = {
+                "available": newer,
+                "current": VERSION,
+                "latest": release.version,
+                "url": release.url,
+                "skipped": skipped,
+            }
+            self._c.settings.update(last_update_check=time.strftime("%Y-%m-%dT%H:%M:%S"))
+        if newer:
+            message = get_string("update_available", version=release.version)
+            self._log(message)
+            self._changed()
+        elif quiet:
+            return {}
+        else:
+            message = get_string("update_none", version=VERSION)
+        return {**self._update, "message": message}
+
+    def _update_tick(self) -> None:
+        """The once-a-day check, in the background, when the person allowed it."""
+        from ..services.updates import due
+
+        settings = self._c.settings.current
+        if not settings.auto_update_check or not due(settings.last_update_check):
+            return
+
+        def run() -> None:
+            try:
+                self._check_updates(quiet=True)
+            except Exception as e:  # never break the app for an update check
+                logger.debug("Update check crashed: %s", e)
+
+        threading.Thread(target=run, daemon=True, name="update-check").start()
 
     # --- misc -----------------------------------------------------------------------
 

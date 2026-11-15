@@ -1,4 +1,7 @@
 import asyncio
+import sys
+
+import pytest
 
 from src.models.profile import Profile
 from src.services.browser import process, runner
@@ -156,3 +159,31 @@ def test_kill_tree_hides_the_taskkill_window(monkeypatch):
     process.kill_tree(type("P", (), {"pid": 42})())
     assert captured["args"][:2] == ["taskkill", "/PID"]
     assert captured["creationflags"] == getattr(process.subprocess, "CREATE_NO_WINDOW", 0)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="reads /proc")
+def test_kill_tree_takes_the_browser_with_it():
+    """A runner that dies must not leave its browser holding the profile: the next
+    launch then fails with an opaque error and the profile looks broken."""
+    import pathlib
+    import subprocess as sp
+    import sys
+    import time
+
+    code = (
+        "import subprocess, sys, time\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+        "print(child.pid, flush=True)\n"
+        "time.sleep(30)\n"
+    )
+    runner = sp.Popen([sys.executable, "-c", code], stdout=sp.PIPE, text=True)
+    try:
+        child = int(runner.stdout.readline())
+        assert process._descendants(runner.pid)
+        process.kill_tree(runner)
+        runner.wait(timeout=5)
+        time.sleep(0.5)
+        assert not pathlib.Path(f"/proc/{child}").exists(), "the browser survived its runner"
+    finally:
+        if runner.poll() is None:
+            runner.kill()

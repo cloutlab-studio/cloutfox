@@ -1,0 +1,81 @@
+name: Packages
+
+# Takes the .deb and .rpm of a published release, builds the apt and dnf
+# repositories, signs them and deploys the folder to GitHub Pages, which is
+# served as software.cloutlab.studio. No server, no SSH, no long-lived token:
+# the job uses the workflow's own GITHUB_TOKEN and the Pages OIDC exchange.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (empty: the latest release)"
+        required: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Packages of the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.release.tag_name || inputs.tag }}"
+          tag="${tag:-$(gh release view --json tagName -q .tagName)}"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          mkdir -p dist
+          gh release download "$tag" --pattern '*.deb' --pattern '*.rpm' --dir dist
+          ls -l dist
+
+      - name: Import the packages key
+        env:
+          KEY: ${{ secrets.PACKAGES_GPG_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::warning::PACKAGES_GPG_KEY is not set: the repository will be unsigned"
+            exit 0
+          fi
+          mkdir -p -m 700 "$RUNNER_TEMP/gnupg"
+          GNUPGHOME="$RUNNER_TEMP/gnupg" gpg --batch --import <<< "$KEY"
+          echo "GNUPGHOME=$RUNNER_TEMP/gnupg" >> "$GITHUB_ENV"
+
+      - name: Tools for the indexes
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq createrepo-c rpm
+
+      - name: Build the repositories
+        run: python3 packaging/repo.py build --dist dist --site site
+
+      - name: Check the result
+        run: |
+          test -s site/index.html
+          test -s site/apt/dists/stable/InRelease   || echo "::warning::apt index is not signed"
+          test -s site/apt/dists/stable/Release.gpg || true
+          find site -maxdepth 3 -type d | sort
+          du -sh site
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

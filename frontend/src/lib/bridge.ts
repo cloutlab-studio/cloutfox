@@ -36,10 +36,19 @@ export interface HelpRequest {
   reason: string;
 }
 
+export interface UpdateInfo {
+  available: boolean;
+  current: string;
+  latest: string;
+  url: string;
+  skipped: boolean;
+}
+
 export interface Snapshot {
   profiles: Row[];
   help: HelpRequest[];
   master: boolean;
+  update: UpdateInfo | null;
 }
 
 export interface Settings {
@@ -56,6 +65,9 @@ export interface Settings {
   sound_volume: number;
   motion: "system" | "full" | "reduced";
   cursor: boolean;
+  auto_update_check: boolean;
+  update_asked: boolean;
+  update_skipped: string;
 }
 
 export interface Boot {
@@ -216,6 +228,9 @@ export interface Api {
   panel_ready(panel?: Record<string, string | number>): Promise<Result>;
   diagnostics_export(panel?: Record<string, string | number>): Promise<Result>;
   open_data_folder(): Promise<Result>;
+  update_check(): Promise<Result<UpdateInfo & { message?: string }>>;
+  update_install(): Promise<Result<{ kind?: string }>>;
+  update_dismiss(version?: string): Promise<Result>;
   open_external(url: string): Promise<Result>;
 }
 

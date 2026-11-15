@@ -154,6 +154,12 @@ Everything here is optional and off by default. Switch it on in Settings (the ge
 - **Turning off the master password.** Profiles encrypted only with the master password are decrypted. Profiles with their own password stay encrypted.
 - Exporting an encrypted profile to ZIP gives a plain, unencrypted archive.
 
+## Updates
+
+- **Automatic check.** On the first start CloutFox asks whether it may ask GitHub once a day for a newer version; the switch is in Settings → Interface. The only request is an HTTPS GET of the public release information, and nothing about the computer is sent.
+- **In the app.** When a newer version exists, a bar above the list offers "Install update": it downloads the release file, checks its SHA-256 against `SHA256SUMS` and starts the installer (the Windows setup, `apt` or `dnf` behind the system password prompt, or the AppImage replaces itself). CloutFox never replaces itself silently.
+- **With the system package manager.** Debian, Ubuntu, Fedora and openSUSE can take CloutFox from `https://software.cloutlab.studio`, and then `apt upgrade` or `dnf upgrade` bring new versions too. The commands are on that page.
+
 ## AI agents and MCP
 
 <p align="center">

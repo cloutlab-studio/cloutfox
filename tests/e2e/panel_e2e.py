@@ -86,6 +86,9 @@ def page_script() -> str:
         "sound_volume": 60,
         "motion": "system",
         "cursor": True,
+        "auto_update_check": True,
+        "update_asked": True,
+        "update_skipped": "",
     }
     options = {
         "statuses": ["", "new", "active"],
@@ -110,13 +113,15 @@ const state = {{
   boot: {json.dumps(boot, ensure_ascii=False)},
   rows: {json.dumps(rows, ensure_ascii=False)},
   options: {json.dumps(options, ensure_ascii=False)},
-  settings: {json.dumps(settings, ensure_ascii=False)}
+  settings: {json.dumps(settings, ensure_ascii=False)},
+  update: {{available: true, current: "3.1.1", latest: "9.9.9", url: "https://example.com/", skipped: false}}
 }};
 const api = {{
   boot: async () => state.boot,
   start: async () => ({{}}),
   panel_ready: async () => ({{}}),
-  snapshot: async () => ({{profiles: state.rows, help: [], master: false}}),
+  snapshot: async () => ({{profiles: state.rows, help: [], master: false,
+    update: state.update}}),
   log_history: async () => [{{id: 1, at: "10:00:00", text: "e2e"}}],
   options: async () => state.options,
   settings: async () => state.settings,
@@ -188,6 +193,7 @@ def main() -> int:
             assert count >= 20, f"only {count} rows drawn: the list did not render"
             assert page.locator(".rail").count() == 1, "no rail: the shell did not mount"
             # The folder tree: two roots, a subfolder and an empty one that still shows.
+            assert page.locator("text=9.9.9").count() >= 1, "the update bar is missing"
             for name in ("Clients", "Germany", "Ads", "Archive"):
                 assert page.locator(f".rail :text-is('{name}')").count() >= 1, f"no folder {name}"
 

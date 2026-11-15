@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.1.2] - 2026-11-16
+
+### Added
+- Updates in the app: after the first-start question, CloutFox asks GitHub once a day for a newer version and shows a bar above the profile list with "Install update". The button downloads the release file, checks its SHA-256 against `SHA256SUMS` and starts the installer: the Inno setup on Windows, `apt` or `dnf` through the polkit password prompt on Linux, and a running AppImage is replaced in place. Settings → About keeps the manual check; Settings → Interface holds the switch for the automatic one. Nothing about the computer is sent, and CloutFox never replaces itself silently.
+- apt and dnf repositories on GitHub Pages at `software.cloutlab.studio`: on a published release a new workflow builds the indexes, signs them with the packages key and deploys the site, so Debian, Ubuntu, Fedora and openSUSE users get new versions with `apt upgrade` and `dnf upgrade`.
+
+### Fixed
+- A failed stop or a killed app could leave a browser holding the profile, and every later launch then failed with an unreadable error. On Linux the launcher now kills the runner's whole process tree, the browser included.
+
 ## [3.1.1] - 2026-11-15
 
 Nothing changes in the app since 3.1.0.

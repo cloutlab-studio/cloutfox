@@ -12,6 +12,7 @@
   import Empty from "./Empty.svelte";
   import ProfileRow from "./ProfileRow.svelte";
   import Ticker from "./Ticker.svelte";
+  import UpdateBar from "./UpdateBar.svelte";
 
   let { search = $bindable() }: { search?: HTMLInputElement } = $props();
 
@@ -35,6 +36,7 @@
 
 <section class="page">
   <Ticker />
+  <UpdateBar />
   <header class="top">
     <div>
       <h1 class="display title" aria-label={title}>

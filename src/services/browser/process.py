@@ -1,5 +1,7 @@
+import contextlib
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 from collections.abc import Callable
@@ -71,8 +73,40 @@ def spawn_browser(
     )
 
 
+def _descendants(pid: int) -> list[int]:
+    """Every process started by `pid`, the browser among them (Linux /proc scan)."""
+    parents: dict[int, int] = {}
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return []
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            stat = pathlib.Path(f"/proc/{name}/stat").read_text()
+            ppid = int(stat.rsplit(")", 1)[1].split()[1])
+        except (OSError, IndexError, ValueError):
+            continue
+        parents[int(name)] = ppid
+    found, frontier = [], [pid]
+    while frontier:
+        current = frontier.pop()
+        for child, parent in parents.items():
+            if parent == current and child not in found:
+                found.append(child)
+                frontier.append(child)
+    return found
+
+
 def kill_tree(proc: subprocess.Popen) -> None:
-    """Kill a process and, on Windows, everything it started (the browser too)."""
+    """Kill a process and everything it started (the browser too)."""
+    if not _WINDOWS:
+        for child in _descendants(proc.pid):
+            with contextlib.suppress(OSError):
+                os.kill(child, signal.SIGKILL)
+        proc.kill()
+        return
     if _WINDOWS:
         done = subprocess.run(
             ["taskkill", "/PID", str(proc.pid), "/T", "/F"],

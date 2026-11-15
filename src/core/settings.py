@@ -74,6 +74,13 @@ class Settings:
     cursor: bool = True
     # Folders whose subtree is collapsed in the panel's folder tree.
     folders_closed: list = field(default_factory=list)
+    # Updates: one HTTPS request to GitHub, at most once a day, when allowed.
+    auto_update_check: bool = False
+    # Asked once, on the first start, whether that is fine.
+    update_asked: bool = False
+    last_update_check: str = ""
+    # A version the person said "not now" to: the banner stays away until the next one.
+    update_skipped: str = ""
 
 
 class SettingsStore:
