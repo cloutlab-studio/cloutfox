@@ -5,6 +5,7 @@ _STATUS = "Work status: one of new, warming, active, paused, banned, or empty"
 _START = "http(s) pages opened on launch when there are no saved tabs"
 _ROTATE = "Mobile proxy 'change IP' link, called before each launch"
 _EXT = "Ids of installed extensions to load (see GET /extensions)"
+_FOLDER = 'Folder path such as "Clients/Germany", up to three levels; "" is the top level'
 
 
 class ProfileCreate(BaseModel):
@@ -28,6 +29,7 @@ class ProfileCreate(BaseModel):
     start_urls: list[str] = Field(default_factory=list, description=_START)
     proxy_rotate_url: str | None = Field(None, description=_ROTATE)
     extensions: list[str] = Field(default_factory=list, description=_EXT)
+    folder: str = Field("", description=_FOLDER)
 
 
 class ProfileUpdate(BaseModel):
@@ -45,6 +47,7 @@ class ProfileUpdate(BaseModel):
     start_urls: list[str] | None = Field(None, description=_START)
     proxy_rotate_url: str | None = Field(None, description=_ROTATE + '; "" removes it')
     extensions: list[str] | None = Field(None, description=_EXT)
+    folder: str | None = Field(None, description=_FOLDER + '; "" moves it to the top level')
 
 
 class ProfileResponse(BaseModel):
@@ -59,6 +62,7 @@ class ProfileResponse(BaseModel):
     status: str = ""
     start_urls: list[str] = []
     extensions: list[str] = []
+    folder: str = ""
     # Endpoint of the WireGuard tunnel that replaces the proxy; never the config.
     wireguard: str | None = None
     # Never the link itself: it carries the provider's key.

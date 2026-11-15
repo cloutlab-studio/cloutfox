@@ -9,7 +9,7 @@ STATUSES = ("", "new", "warming", "active", "paused", "banned")
 
 # Organisation, not identity: ProfileManager.set_meta changes these. Name, proxy,
 # OS and geo go through update_profile, which also moves the data directory.
-META_FIELDS = ("tags", "notes", "status", "start_urls", "proxy_rotate_url", "extensions")
+META_FIELDS = ("tags", "notes", "status", "start_urls", "proxy_rotate_url", "extensions", "folder")
 
 
 @dataclass
@@ -32,6 +32,8 @@ class Profile:
     last_launch: dict | None = None
     # Folder names under EXTENSIONS_DIR this profile loads.
     extensions: list[str] = field(default_factory=list)
+    # Organising only: "" is no folder, otherwise "Clients/Germany" (up to three levels).
+    folder: str = ""
     # Endpoint of the profile's WireGuard tunnel (its config, with the private key,
     # is wireguard.conf in the data dir); while set it replaces the proxy.
     wireguard: str | None = None

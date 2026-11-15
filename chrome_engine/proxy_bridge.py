@@ -8,8 +8,9 @@ opens every connection through the real upstream proxy with its credentials.
 Target hostnames are always passed to the upstream (HTTP CONNECT or SOCKS5
 domain addressing), never resolved here, so DNS does not leak past the proxy.
 
-The bridge has no password, so on Linux it serves only connections from its own
-OS user (the owner of the client socket, from /proc/net/tcp): other users of the
+The bridge has no password, so it serves only connections from its own OS user:
+on Linux the socket owner comes from /proc/net/tcp, on Windows the owning PID and
+its user SID from GetExtendedTcpTable and the process token. Other users of the
 machine cannot borrow the proxy while a profile runs.
 """
 
@@ -120,6 +121,141 @@ def socket_owner(local: tuple, remote: tuple, tables: tuple[str, ...] | None = N
 
 def _same_user_default() -> int | None:
     return os.getuid() if sys.platform.startswith("linux") else None
+
+
+# --- Windows: who owns the client socket ----------------------------------------------
+#
+# Loopback is not per-user on Windows: any account on the machine can reach the
+# bridge's port. The browser runs as this user, so the client's socket must belong
+# to a process of this user. Windows offers no /proc: the owning PID comes from
+# GetExtendedTcpTable, the user from the process token (a SID string).
+
+_TCP_TABLE_OWNER_PID_ALL = 5
+_AF_INET = 2
+
+
+def _net_port(value: int) -> int:
+    """A port from a table row: stored in network byte order in the low two bytes."""
+    return ((value & 0xFF) << 8) | ((value >> 8) & 0xFF)
+
+
+def _windows_socket_pid(peer_port: int, local_port: int) -> int | None:
+    """The PID owning the client's TCP connection to this bridge, or None."""
+    import ctypes
+    from ctypes import wintypes
+
+    class Row(ctypes.Structure):
+        _fields_ = [
+            ("state", wintypes.DWORD),
+            ("local_addr", wintypes.DWORD),
+            ("local_port", wintypes.DWORD),
+            ("remote_addr", wintypes.DWORD),
+            ("remote_port", wintypes.DWORD),
+            ("pid", wintypes.DWORD),
+        ]
+
+    iphlpapi = ctypes.WinDLL("iphlpapi", use_last_error=True)
+    size = wintypes.DWORD(0)
+    iphlpapi.GetExtendedTcpTable(
+        None, ctypes.byref(size), False, _AF_INET, _TCP_TABLE_OWNER_PID_ALL, 0
+    )
+    if not size.value:
+        return None
+    buffer = ctypes.create_string_buffer(size.value)
+    result = iphlpapi.GetExtendedTcpTable(
+        buffer, ctypes.byref(size), False, _AF_INET, _TCP_TABLE_OWNER_PID_ALL, 0
+    )
+    if result != 0:
+        return None
+    count = ctypes.cast(buffer, ctypes.POINTER(wintypes.DWORD))[0]
+    rows = ctypes.cast(ctypes.byref(buffer, ctypes.sizeof(wintypes.DWORD)), ctypes.POINTER(Row))
+    for i in range(count):
+        row = rows[i]
+        # The client's socket: its local end is the peer we see, its remote end ours.
+        if _net_port(row.local_port) == peer_port and _net_port(row.remote_port) == local_port:
+            return int(row.pid)
+    return None
+
+
+def _windows_process_sid(pid: int) -> str | None:
+    """The SID of a process's user as a string, or None when Windows refuses."""
+    import ctypes
+    from ctypes import wintypes
+
+    TOKEN_QUERY = 0x8
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    TOKEN_USER = 1
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    advapi32.OpenProcessToken.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.HANDLE),
+    ]
+    advapi32.GetTokenInformation.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    kernel32.LocalFree.argtypes = [wintypes.HLOCAL]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    process = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not process:
+        return None
+    token = wintypes.HANDLE()
+    try:
+        if not advapi32.OpenProcessToken(process, TOKEN_QUERY, ctypes.byref(token)):
+            return None
+        size = wintypes.DWORD(0)
+        advapi32.GetTokenInformation(token, TOKEN_USER, None, 0, ctypes.byref(size))
+        if not size.value:
+            return None
+        buffer = ctypes.create_string_buffer(size.value)
+        if not advapi32.GetTokenInformation(token, TOKEN_USER, buffer, size, ctypes.byref(size)):
+            return None
+        # TOKEN_USER starts with SID_AND_ATTRIBUTES, whose first member is the SID pointer.
+        sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
+        text = wintypes.LPWSTR()
+        if not advapi32.ConvertSidToStringSidW(ctypes.c_void_p(sid), ctypes.byref(text)):
+            return None
+        try:
+            return text.value
+        finally:
+            kernel32.LocalFree(text)
+    finally:
+        if token:
+            kernel32.CloseHandle(token)
+        kernel32.CloseHandle(process)
+
+
+def own_sid() -> str | None:
+    """This process's user SID on Windows, or None elsewhere."""
+    if sys.platform != "win32":
+        return None
+    try:
+        return _windows_process_sid(os.getpid())
+    except Exception:  # a machine without the API: the check is simply off
+        return None
+
+
+def windows_socket_owner(peer: tuple, local: tuple) -> tuple[bool, str | None]:
+    """(the connection was found in the table, the SID of the user who owns it)."""
+    try:
+        pid = _windows_socket_pid(peer[1], local[1])
+    except Exception:
+        return False, None
+    if pid is None:
+        return False, None
+    try:
+        return True, _windows_process_sid(pid)
+    except Exception:
+        return True, None
 
 
 async def _read_head(reader: asyncio.StreamReader) -> bytes:
@@ -305,6 +441,8 @@ class ProxyBridge:
         # Serve only this OS user's connections; -1: this process's user on Linux,
         # None: anyone (no socket owners to check on other systems).
         self.only_uid = _same_user_default() if only_uid == -1 else only_uid
+        # Windows has no UIDs: the same rule is kept by the client's user SID.
+        self.only_sid = own_sid() if only_uid == -1 else None
         self.port = 0
         self.connections = 0
         self.refused = 0
@@ -357,15 +495,28 @@ class ProxyBridge:
                 self._clients.discard(task)
 
     def _allowed(self, writer: asyncio.StreamWriter) -> bool:
-        if self.only_uid is None:
+        if self.only_uid is None and self.only_sid is None:
             return True
         peer = writer.get_extra_info("peername")
         local = writer.get_extra_info("sockname")
-        owner = socket_owner(peer[:2], local[:2]) if peer and local else None
-        if owner != self.only_uid:
-            self.errors.append(f"refused a connection from UID {owner} (not this user)")
-            return False
-        return True
+        if not peer or not local:
+            return True
+        if self.only_uid is not None:
+            owner = socket_owner(peer[:2], local[:2])
+            if owner != self.only_uid:
+                self.errors.append(f"refused a connection from UID {owner} (not this user)")
+                return False
+            return True
+        found, sid = windows_socket_owner(peer[:2], local[:2])
+        if not found:
+            # The connection closed between accepting it and the lookup.
+            return True
+        if sid == self.only_sid:
+            return True
+        # Another account, or a process whose user Windows would not tell us:
+        # the browser runs as this user, so it always resolves.
+        self.errors.append(f"refused a connection from another user ({sid or 'unknown'})")
+        return False
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:

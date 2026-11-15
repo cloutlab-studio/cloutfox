@@ -36,6 +36,7 @@ node_modules
 # Tooling artefacts
 uv.lock
 e2e-output/
+e2e-data/
 .omc/
 .impeccable/
 .idea/

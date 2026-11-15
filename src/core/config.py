@@ -22,6 +22,8 @@ KEYS_FILE = _env("KEYS_FILE", "profile_keys.json")
 ENCRYPTED_DIR = _env("ENCRYPTED_DIR", "encrypted_data")
 # Settings toggled in the app, and the shared folder of browser extensions.
 SETTINGS_FILE = _env("SETTINGS_FILE", "settings.json")
+# The folder tree of the profile list: exists so an empty folder can stay.
+FOLDERS_FILE = _env("FOLDERS_FILE", "folders.json")
 EXTENSIONS_DIR = _env("EXTENSIONS_DIR", "extensions")
 # Helper programs downloaded on demand (wireproxy for WireGuard profiles).
 BIN_DIR = _env("BIN_DIR", "bin")

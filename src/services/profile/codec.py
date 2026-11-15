@@ -8,6 +8,7 @@ dropping the whole profile.
 from ...models.profile import ENGINES, STATUSES, Profile
 from ...utils.validation import (
     MAX_NOTES_LENGTH,
+    normalize_folder,
     normalize_tags,
     normalize_urls,
     valid_or_none,
@@ -45,5 +46,6 @@ def profile_from_dict(data: dict) -> Profile:
         proxy_rotate_url=valid_or_none(data.get("proxy_rotate_url"), validate_http_url),
         last_launch=_last_launch(data.get("last_launch")),
         extensions=[e for e in data.get("extensions") or [] if isinstance(e, str)][:50],
+        folder=normalize_folder(data.get("folder")),
         wireguard=data.get("wireguard") if isinstance(data.get("wireguard"), str) else None,
     )

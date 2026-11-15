@@ -19,6 +19,9 @@ _PROJECT_ROOT = str(pathlib.Path(__file__).parents[3])
 PROXY_IN_ENV = "-"
 
 _WINDOWS = sys.platform == "win32"
+# The installed app runs under pythonw.exe, which has no console: a console
+# program started without this flag opens an empty black window of its own.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def runner_command(profile: Profile) -> list[str]:
@@ -64,6 +67,7 @@ def spawn_browser(
         encoding="utf-8",
         errors="replace",
         bufsize=1,
+        creationflags=_NO_WINDOW,
     )
 
 
@@ -73,7 +77,7 @@ def kill_tree(proc: subprocess.Popen) -> None:
         done = subprocess.run(
             ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
             capture_output=True,
-            creationflags=subprocess.CREATE_NO_WINDOW,
+            creationflags=_NO_WINDOW,
         )
         if done.returncode == 0:
             return

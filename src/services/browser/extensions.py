@@ -15,6 +15,7 @@ import shutil
 import zipfile
 
 from ...core.config import EXTENSIONS_DIR
+from ...utils.fs import remove_tree
 
 # Written at install when the file type says which browser the extension is for.
 _ENGINE_MARK = ".cloutfox-engine"
@@ -138,14 +139,14 @@ def install(source: str) -> str:
             if engine:
                 (target / _ENGINE_MARK).write_text(engine, encoding="utf-8")
     except (OSError, zipfile.BadZipFile) as e:
-        shutil.rmtree(target, ignore_errors=True)
+        remove_tree(target)
         raise ExtensionError(str(e)) from e
     except ExtensionError:
-        shutil.rmtree(target, ignore_errors=True)
+        remove_tree(target)
         raise
     return target.name
 
 
 def remove(ext_id: str) -> None:
     if _valid_id(ext_id):
-        shutil.rmtree(root() / ext_id, ignore_errors=True)
+        remove_tree(root() / ext_id)

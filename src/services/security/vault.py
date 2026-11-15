@@ -21,6 +21,7 @@ import pathlib
 import threading
 
 from ...core.logging import get_logger
+from ...utils.fs import write_private
 from . import crypto
 
 logger = get_logger("security.vault")
@@ -49,7 +50,7 @@ def parse_recovery_key(text: str) -> bytes:
 def _write_atomic(path: pathlib.Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_bytes(data)
+    write_private(tmp, data)
     os.replace(tmp, path)
 
 

@@ -20,14 +20,15 @@ import hashlib
 import json
 import os
 import pathlib
-import shutil
 import sys
 import tarfile
 import tempfile
 import threading
+import time
 from collections.abc import Iterator
 
 from ...core.logging import get_logger
+from ...utils.fs import make_private, open_private, remove_tree, write_private
 from . import crypto
 from .vault import Vault
 
@@ -133,8 +134,9 @@ class ProfileData:
 
     def _save_key_table(self, table: dict) -> None:
         self.keys_file.parent.mkdir(parents=True, exist_ok=True)
+        make_private(self.keys_file.parent)
         tmp = self.keys_file.with_name(self.keys_file.name + ".tmp")
-        tmp.write_text(json.dumps(table, indent=2), encoding="utf-8")
+        write_private(tmp, json.dumps(table, indent=2).encode("utf-8"))
         os.replace(tmp, self.keys_file)
 
     def key_by(self, name: str) -> list[str]:
@@ -206,9 +208,10 @@ class ProfileData:
     def _pack(self, name: str, src: pathlib.Path, key: bytes) -> None:
         """Encrypt directory `src` into the profile's container (atomic replace)."""
         self.encrypted_dir.mkdir(parents=True, exist_ok=True)
+        make_private(self.encrypted_dir)
         target = self.container(name)
         tmp = target.with_name(target.name + ".tmp")
-        with tmp.open("wb") as out:
+        with open_private(tmp) as out:
             writer = crypto.StreamWriter(out, key, STREAM_MAGIC, {"v": 1})
             with tarfile.open(fileobj=writer, mode="w|") as tar:
                 for child in sorted(src.iterdir()) if src.exists() else []:
@@ -220,6 +223,7 @@ class ProfileData:
 
     def _unpack(self, name: str, dest: pathlib.Path, key: bytes) -> None:
         dest.mkdir(parents=True, exist_ok=True)
+        make_private(dest)
         with self.container(name).open("rb") as src:
             header = crypto.read_header(src, STREAM_MAGIC)
             reader = crypto.StreamReader(src, key, STREAM_MAGIC, header)
@@ -247,7 +251,7 @@ class ProfileData:
                 # Left by a crash with the data still in it: newer than the container.
                 logger.warning("Reusing the unpacked data of %s left by an earlier run", name)
             else:
-                shutil.rmtree(work, ignore_errors=True)
+                remove_tree(work)
                 self._unpack(name, work, key)
                 (work / _OPEN_MARKER).touch()
             self._open[name] = [str(work), 1]
@@ -267,8 +271,26 @@ class ProfileData:
             work = pathlib.Path(entry[0])
             # On failure the unpacked copy (and its marker) stays, so the next
             # acquire() picks it up instead of the older container.
-            self._pack(name, work, self._key(name))
-            shutil.rmtree(work, ignore_errors=True)
+            if self._pack_with_retries(name, work):
+                remove_tree(work)
+
+    def _pack_with_retries(self, name: str, work: pathlib.Path, attempts: int = 3) -> bool:
+        """Pack, giving a browser that was force-killed time to let go of its files.
+
+        On Windows a killed browser still holds its files for a moment, and a
+        pack that hits one leaves the container older than the work directory.
+        """
+        for i in range(attempts):
+            try:
+                self._pack(name, work, self._key(name))
+                return True
+            except OSError as e:
+                if i == attempts - 1:
+                    logger.exception("Could not pack the data of %s: %s", name, e)
+                    return False
+                logger.warning("Packing %s failed (%s); retrying", name, e)
+                time.sleep(0.4 * (i + 1))
+        return False
 
     @contextlib.contextmanager
     def opened(self, name: str) -> Iterator[pathlib.Path]:
@@ -326,7 +348,7 @@ class ProfileData:
             table[name] = entry
             self._save_key_table(table)
             self._keys[name] = key
-            shutil.rmtree(self.plain_dir(name), ignore_errors=True)
+            remove_tree(self.plain_dir(name))
 
     def decrypt(self, name: str) -> None:
         """Back to a plain directory under DATA_DIR."""
@@ -334,9 +356,9 @@ class ProfileData:
             self._require_closed(name)
             key = self._key(name)
             tmp = self.data_dir / f".{name}.decrypting"
-            shutil.rmtree(tmp, ignore_errors=True)
+            remove_tree(tmp)
             self._unpack(name, tmp, key)
-            shutil.rmtree(self.plain_dir(name), ignore_errors=True)
+            remove_tree(self.plain_dir(name))
             os.replace(tmp, self.plain_dir(name))
             self._forget(name)
 
@@ -401,7 +423,7 @@ class ProfileData:
     def remove(self, name: str) -> None:
         with self._lock:
             self._forget(name)
-            shutil.rmtree(self.work_dir(name), ignore_errors=True)
+            remove_tree(self.work_dir(name))
 
     def lock_all(self) -> None:
         """Drop every profile key from memory."""
@@ -420,5 +442,5 @@ class ProfileData:
                     f.flush()
                     os.fsync(f.fileno())
             self.keys_file.unlink(missing_ok=True)
-            shutil.rmtree(self.encrypted_dir, ignore_errors=True)
-            shutil.rmtree(self.work_dir(""), ignore_errors=True)
+            remove_tree(self.encrypted_dir)
+            remove_tree(self.work_dir(""))

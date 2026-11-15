@@ -20,6 +20,7 @@
   const items = $derived<MenuItem[]>([
     { id: "warmup", label: t("menu_warmup"), icon: "flame", disabled: busy },
     { id: "clone", label: t("menu_clone"), icon: "copy" },
+    { id: "move", label: t("folder_move"), icon: "folder", disabled: row.temporary },
     { id: "activity", label: t("menu_activity"), icon: "bot" },
     { id: "encryption", label: t("menu_encryption"), icon: "lock", disabled: busy || row.temporary },
     { id: "wireguard", label: t("menu_wireguard"), icon: "tunnel", disabled: busy || row.temporary },
@@ -35,6 +36,13 @@
   class:failed={row.failed && !row.running && !row.loading}
   style:animation-delay={stagger(index)}
   role="row"
+  tabindex="-1"
+  draggable="true"
+  ondragstart={(e) => {
+    const names = selected.has(row.name) ? [...selected] : [row.name];
+    e.dataTransfer?.setData("application/x-cloutfox-profiles", JSON.stringify(names));
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+  }}
 >
   <div class="cell select">
     <Checkbox

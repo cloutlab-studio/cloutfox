@@ -7,7 +7,7 @@
   import { visible } from "../../lib/filters";
   import { language, t } from "../../lib/i18n.svelte";
   import { play } from "../../lib/sound";
-  import { app, selected } from "../../lib/store.svelte";
+  import { app, selected, setFolder } from "../../lib/store.svelte";
   import BulkBar from "./BulkBar.svelte";
   import Empty from "./Empty.svelte";
   import ProfileRow from "./ProfileRow.svelte";
@@ -15,7 +15,7 @@
 
   let { search = $bindable() }: { search?: HTMLInputElement } = $props();
 
-  const rows = $derived(visible(app.rows, app.filter, app.query));
+  const rows = $derived(visible(app.rows, app.filter, app.query, app.folder));
   const running = $derived(app.rows.filter((r) => r.running).length);
   const allPicked = $derived(rows.length > 0 && rows.every((r) => selected.has(r.name)));
   const somePicked = $derived(rows.some((r) => selected.has(r.name)));
@@ -45,6 +45,13 @@
       <p class="sub">
         {t("profiles_configured", { count: app.rows.length })} ·
         {#if running}<b class="live">{running}</b> {t("profiles_running_suffix")}{:else}{t("profiles_none_running")}{/if}
+        {#if app.folder !== null}
+          <button type="button" class="folderchip" onclick={() => setFolder(null)} title={t("clear_filters")}>
+            <Icon name="folder" size={12} />
+            {app.folder || t("folder_root")}
+            <b>×</b>
+          </button>
+        {/if}
       </p>
     </div>
     <div class="tools">
@@ -175,6 +182,21 @@
   }
   .search :global(.kbd) {
     color: var(--dim);
+  }
+  .folderchip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 10px;
+    padding: 2px 8px;
+    border: 2px solid var(--t-line);
+    background: var(--t-bg-2);
+    color: var(--t-fg);
+    font: 600 11px var(--font-mono);
+    vertical-align: middle;
+  }
+  .folderchip:hover {
+    background: var(--t-accent);
   }
   .sheet {
     container: sheet / inline-size;

@@ -9,6 +9,8 @@ import Confirm from "../dialogs/Confirm.svelte";
 import Cookies from "../dialogs/Cookies.svelte";
 import Encryption from "../dialogs/Encryption.svelte";
 import Export from "../dialogs/Export.svelte";
+import FolderName from "../dialogs/FolderName.svelte";
+import MoveTo from "../dialogs/MoveTo.svelte";
 import PasswordPrompt from "../dialogs/PasswordPrompt.svelte";
 import ProfileEditor from "../dialogs/ProfileEditor.svelte";
 import Warmup from "../dialogs/Warmup.svelte";
@@ -17,7 +19,7 @@ import { py, type Row } from "./bridge";
 import { t } from "./i18n.svelte";
 import { open } from "./overlay.svelte";
 import { play } from "./sound";
-import { app, refresh, selected } from "./store.svelte";
+import { app, loadOptions, refresh, selected } from "./store.svelte";
 import { report, toast } from "./toast.svelte";
 
 function row(name: string): Row | undefined {
@@ -97,6 +99,43 @@ export function warmup(names: string[]): void {
   if (names.length) void open(Warmup, { names }).then(() => refresh());
 }
 
+export function moveTo(names: string[]): void {
+  if (names.length) void open(MoveTo, { names }).then(() => refresh());
+}
+
+export function folderAdd(parent: string): void {
+  void open(FolderName, { parent }).then((ok) => {
+    if (ok) void loadOptions();
+  });
+}
+
+export function folderRename(path: string): void {
+  void open(FolderName, { path }).then((ok) => {
+    if (ok) void loadOptions();
+  });
+}
+
+export async function folderRemove(path: string): Promise<void> {
+  const ok = await open<boolean>(Confirm, {
+    title: t("folder_delete"),
+    body: t("folder_delete_confirm", { name: path }),
+  });
+  if (!ok) return;
+  const result = await py().folder_delete(path);
+  if (result.message) toast(result.message, "ok");
+  await Promise.all([refresh(), loadOptions()]);
+}
+
+export async function moveProfilesTo(names: string[], folder: string): Promise<void> {
+  const result = await py().profiles_move(names, folder);
+  if (result.error) {
+    toast(result.error, "error");
+    return;
+  }
+  if (result.message) toast(result.message, "ok");
+  await Promise.all([refresh(), loadOptions()]);
+}
+
 export function clone(name: string): void {
   void open(Clone, { name }).then(() => refresh());
 }
@@ -140,6 +179,7 @@ export function menu(name: string, id: string): void {
     wireguard: () => void wireguard(name),
     rotate_ip: () => void rotate(name),
     export: () => exportProfiles([name]),
+    move: () => moveTo(selected.has(name) ? [...selected] : [name]),
   };
   actions[id]?.();
 }

@@ -6,9 +6,10 @@
   import * as act from "../lib/actions";
   import { fox } from "../lib/assets";
   import { filterCounts } from "../lib/filters";
+  import { flatten, folderTree, rootCount } from "../lib/folders";
   import { language, t } from "../lib/i18n.svelte";
   import { play } from "../lib/sound";
-  import { app, saveSettings, setFilter, setLanguage, type Page } from "../lib/store.svelte";
+  import { app, saveSettings, setFilter, setFolder, setLanguage, type Page } from "../lib/store.svelte";
 
   let { onpalette }: { onpalette: () => void } = $props();
 
@@ -25,6 +26,49 @@
     if (id.startsWith("tag:")) return `#${id.slice(4)}`;
     if (id.startsWith("status:")) return t(`status_${id.slice(7)}`);
     return t(`filter_${id}`);
+  }
+
+  const atRoot = $derived(rootCount(app.rows));
+  const tree = $derived(folderTree(app.rows, app.options?.folders ?? []));
+  const closed = $derived(new Set(app.settings?.folders_closed ?? []));
+  const nodes = $derived(flatten(tree).filter((n) => !insideClosed(n.path, closed)));
+  let over = $state<string | null>(null);
+
+  function insideClosed(path: string, shut: Set<string>): boolean {
+    const parts = path.split("/");
+    for (let i = 1; i < parts.length; i++) if (shut.has(parts.slice(0, i).join("/"))) return true;
+    return false;
+  }
+
+  function pick(folder: string | null) {
+    setFolder(folder);
+    app.page = "profiles";
+  }
+
+  async function twist(path: string) {
+    const next = new Set(closed);
+    next.has(path) ? next.delete(path) : next.add(path);
+    await saveSettings({ folders_closed: [...next] });
+  }
+
+  function dragover(e: DragEvent, folder: string) {
+    if (!e.dataTransfer?.types.includes("application/x-cloutfox-profiles")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    over = folder;
+  }
+
+  function drop(e: DragEvent, folder: string) {
+    e.preventDefault();
+    over = null;
+    const raw = e.dataTransfer?.getData("application/x-cloutfox-profiles");
+    if (!raw) return;
+    try {
+      const names = JSON.parse(raw) as string[];
+      if (Array.isArray(names) && names.length) void act.moveProfilesTo(names, folder);
+    } catch {
+      // Someone dragged text, not profiles.
+    }
   }
 
   function go(page: Page) {
@@ -77,6 +121,74 @@
     {/each}
   </ul>
 
+  <div class="middle">
+  <div class="folders">
+    <span class="head">
+      <span>{t("folders_title")}</span>
+      <button
+        type="button"
+        class="add"
+        title={t("folder_add")}
+        data-press
+        onclick={() => act.folderAdd(app.folder ?? "")}
+      >
+        <Icon name="plus" size={12} />
+      </button>
+    </span>
+    <ul>
+      <li>
+        <button type="button" class="rootrow" class:on={app.folder === null} data-press onclick={() => pick(null)}>
+          <Icon name="layers" size={14} />
+          <span class="fname">{t("filter_all")}</span>
+          <span class="fcount mono">{app.rows.length}</span>
+        </button>
+      </li>
+      <li
+        class:over={over === ""}
+        ondrop={(e) => drop(e, "")}
+        ondragover={(e) => dragover(e, "")}
+        ondragleave={() => (over = null)}
+      >
+        <button type="button" class="rootrow" class:on={app.folder === ""} data-press onclick={() => pick("")}>
+          <Icon name="file" size={14} />
+          <span class="fname">{t("folder_root")}</span>
+          <span class="fcount mono">{atRoot}</span>
+        </button>
+      </li>
+      {#each nodes as node (node.path)}
+        <li
+          class:over={over === node.path}
+          ondrop={(e) => drop(e, node.path)}
+          ondragover={(e) => dragover(e, node.path)}
+          ondragleave={() => (over = null)}
+        >
+          <div class="frow" class:on={app.folder === node.path} style:--depth={node.depth}>
+            {#if node.children.length}
+              <button type="button" class="chev" title={t("folders_title")} onclick={() => twist(node.path)}>
+                <Icon name={closed.has(node.path) ? "chevron" : "down"} size={11} />
+              </button>
+            {:else}
+              <span class="dot"></span>
+            {/if}
+            <button type="button" class="main" data-press onclick={() => pick(node.path)}>
+              <Icon name="folder" size={14} />
+              <span class="fname">{node.name}</span>
+              <span class="fcount mono">{node.count}</span>
+            </button>
+            <span class="acts">
+              <button type="button" title={t("folder_rename")} onclick={() => act.folderRename(node.path)}>
+                <Icon name="edit" size={12} />
+              </button>
+              <button type="button" title={t("folder_delete")} onclick={() => void act.folderRemove(node.path)}>
+                <Icon name="trash" size={12} />
+              </button>
+            </span>
+          </div>
+        </li>
+      {/each}
+    </ul>
+  </div>
+
   <div class="filters">
     <span class="label head">{t("filter_title")}</span>
     <ul>
@@ -97,6 +209,8 @@
         </li>
       {/each}
     </ul>
+  </div>
+
   </div>
 
   <div class="foot">
@@ -139,8 +253,8 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    gap: 18px;
-    padding: 20px 16px 14px;
+    gap: 12px;
+    padding: 18px 16px 12px;
     background: var(--rail);
     color: var(--rail-ink);
     border-right: var(--t-border-w) solid var(--t-line);
@@ -272,7 +386,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 9px 10px;
+    padding: 8px 10px;
     border: 0;
     background: none;
     color: var(--rail-ink);
@@ -302,9 +416,137 @@
     animation: blink 0.8s steps(1) infinite;
     animation-play-state: var(--loops);
   }
-  .filters {
+  .middle {
     flex: 1;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow: hidden;
+  }
+  .folders {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 2px solid var(--rail-line);
+  }
+  .folders .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+  }
+  .add {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 1.5px solid var(--rail-line);
+    background: var(--rail-deep);
+    color: var(--rail-muted);
+  }
+  .add:hover {
+    border-color: var(--t-accent);
+    color: var(--t-accent);
+  }
+  .folders ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: none;
+    overflow: visible;
+  }
+  .folders li.over {
+    outline: 2px dashed var(--t-accent);
+    outline-offset: -2px;
+  }
+  .rootrow,
+  .frow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 5px 8px;
+    border: 0;
+    background: none;
+    color: var(--rail-ink);
+    font-size: 13px;
+    text-align: left;
+  }
+  .frow {
+    padding-left: calc(8px + var(--depth) * 14px);
+  }
+  .main {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+  }
+  .main:hover .fname {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+    text-decoration-color: var(--t-accent-2);
+  }
+  .chev {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--rail-muted);
+  }
+  .chev:hover {
+    color: var(--t-accent);
+  }
+  .dot {
+    width: 16px;
+  }
+  .acts {
+    display: none;
+    gap: 2px;
+  }
+  .frow:hover .acts {
+    display: flex;
+  }
+  .acts button {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--rail-muted);
+  }
+  .acts button:hover {
+    color: var(--t-accent);
+  }
+  .folders .on {
+    background: var(--rail-deep);
+    box-shadow: inset 4px 0 0 var(--t-accent);
+  }
+  .folders .fcount {
+    min-width: 24px;
+    padding: 0 4px;
+    border: 1.5px solid var(--rail-line);
+    color: var(--rail-muted);
+    font-size: 10.5px;
+    text-align: center;
+  }
+  .filters {
+    flex: 1;
+    min-height: 88px;
     display: flex;
     flex-direction: column;
     gap: 8px;

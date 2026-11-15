@@ -179,3 +179,59 @@ def validate_urls(value: str | list[str]) -> tuple[bool, str]:
     if len(urls) > MAX_START_URLS:
         return False, get_string("validation_too_many_urls", max=MAX_START_URLS)
     return True, ""
+
+
+MAX_FOLDER_DEPTH = 3
+MAX_FOLDER_SEGMENT = 48
+MAX_FOLDER_LENGTH = 160
+
+
+def check_folder_segment(part: str) -> tuple[bool, str]:
+    """One folder level: the same rules as a profile name, without the slash."""
+    if len(part) > MAX_FOLDER_SEGMENT:
+        return False, get_string("validation_folder_segment", length=MAX_FOLDER_SEGMENT)
+    if part in (".", ".."):
+        return False, get_string("validation_folder_dots")
+    if part != part.strip() or part.endswith("."):
+        return False, get_string("validation_folder_spaces")
+    if any(c in _INVALID_CHARS for c in part) or any(ord(c) < 32 or ord(c) == 127 for c in part):
+        return False, get_string("validation_folder_chars")
+    if part.upper() in _RESERVED_NAMES:
+        return False, get_string("validation_reserved_name", name=part)
+    return True, ""
+
+
+def validate_folder_path(folder: str) -> tuple[bool, str]:
+    """A folder is "" (no folder) or up to three levels joined by "/"."""
+    if not folder:
+        return True, ""
+    if len(folder) > MAX_FOLDER_LENGTH:
+        return False, get_string("validation_folder_too_long")
+    parts = folder.split("/")
+    if len(parts) > MAX_FOLDER_DEPTH:
+        return False, get_string("validation_folder_depth", depth=MAX_FOLDER_DEPTH)
+    for part in parts:
+        if not part:
+            return False, get_string("validation_folder_empty")
+        ok, message = check_folder_segment(part)
+        if not ok:
+            return False, message
+    return True, ""
+
+
+def normalize_folder(folder: object) -> str:
+    """Trim every level and drop empty ones; an invalid value becomes no folder."""
+    if not isinstance(folder, str):
+        return ""
+    parts = [part.strip() for part in folder.split("/") if part.strip()]
+    if not parts:
+        return ""
+    text = "/".join(parts)
+    ok, _ = validate_folder_path(text)
+    return text if ok else ""
+
+
+def folder_ancestors(folder: str) -> list[str]:
+    """Every level of a folder path, outermost first: "A/B" -> ["A", "A/B"]."""
+    parts = [part for part in folder.split("/") if part]
+    return ["/".join(parts[: i + 1]) for i in range(len(parts))]

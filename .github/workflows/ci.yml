@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Every branch: a Windows-only problem should show up on the branch that
+    # causes it, not after the merge into main.
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
@@ -50,8 +52,29 @@ jobs:
       - run: npm run check
       - run: npm test
 
+  panel-browser:
+    name: Panel in a browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: Renders the committed panel and opens the palette
+        run: python tests/e2e/panel_e2e.py e2e-data/panel
+      - if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: panel-screenshot
+          path: e2e-data/panel/panel.png
+          if-no-files-found: warn
+
   windows-browser:
-    name: Windows browser stop
+    name: Windows browser
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -63,3 +86,16 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: python -m camoufox fetch
       - run: python tests\e2e\stop_e2e.py
+        env:
+          CLOUTFOX_E2E_DIR: ${{ github.workspace }}\e2e-data\stop
+      - name: Encrypted profile with a Cyrillic name, launched twice
+        run: python tests\e2e\profile_e2e.py
+        env:
+          CLOUTFOX_E2E_DIR: ${{ github.workspace }}\e2e-data\profile
+      - name: Logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: windows-browser-logs
+          path: e2e-data/**/logs/*
+          if-no-files-found: warn

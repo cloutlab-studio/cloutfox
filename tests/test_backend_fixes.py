@@ -401,18 +401,24 @@ class TestDeleteRace:
         is gone, or the delete removes the new profile's directory."""
         pm, _ = manager_in_tmp
         pm.add_profile("racer", "", "windows")
-        import src.services.profile.manager as mgr_mod
+        import src.utils.fs as fs_mod
 
-        real_rmtree = mgr_mod.shutil.rmtree
+        real_rmtree = fs_mod.shutil.rmtree
         held = []
 
-        def rmtree(path, ignore_errors=False):
-            t = threading.Thread(target=lambda: held.append(not pm._lock.acquire(timeout=0)))
+        def probe():
+            got = pm._lock.acquire(timeout=0)
+            held.append(not got)
+            if got:
+                pm._lock.release()
+
+        def rmtree(path, *args, **kwargs):
+            t = threading.Thread(target=probe)
             t.start()
             t.join()
-            real_rmtree(path, ignore_errors=ignore_errors)
+            real_rmtree(path, *args, **kwargs)
 
-        monkeypatch.setattr(mgr_mod.shutil, "rmtree", rmtree)
+        monkeypatch.setattr(fs_mod.shutil, "rmtree", rmtree)
         assert pm.delete_profile("racer")
         assert held == [True]
 

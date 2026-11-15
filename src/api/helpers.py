@@ -54,6 +54,7 @@ def profile_response(profile: Profile, bl: IBrowserLauncher) -> ProfileResponse:
         status=profile.status,
         start_urls=profile.start_urls,
         extensions=profile.extensions,
+        folder=profile.folder,
         wireguard=profile.wireguard,
         has_rotate_url=bool(profile.proxy_rotate_url),
         last_launch=profile.last_launch,

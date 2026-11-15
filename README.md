@@ -91,7 +91,7 @@ The API and MCP run only while the app is open and listen only on `127.0.0.1`. S
 
 ## The panel
 
-- **Pages** in the black rail on the left: Profiles, Activity Log, AI agents (MCP setup) and Settings. The rail also holds the counters, filters, language and sound.
+- **Pages** in the black rail on the left: Profiles, Activity Log, AI agents (MCP setup) and Settings. The rail also holds the counters, folders, filters, language and sound.
 - **Keys.** `Ctrl+K`: command palette (find a profile, launch it, open settings). `/`: search. `N`: new profile. Space: launch or stop the one selected profile. `Esc`: close a dialog.
 - **Sounds** are short and synthesized in the panel; there are no sound files. Turn them off or change the volume in Settings → Interface. The chime for an agent's request always plays.
 - **Animation** follows the system's "reduce motion" setting; in Settings you can keep it full or reduce it. The studio cursor is switched off there too.
@@ -99,6 +99,7 @@ The API and MCP run only while the app is open and listen only on `127.0.0.1`. S
 
 ## Working with profiles
 
+- **Folders.** Put profiles into folders up to three levels deep (`Clients/Germany`): drag a row onto a folder in the rail, or use "Move to folder" in the row menu and in the bulk bar. An empty folder stays until you delete it; deleting a folder moves its profiles one level up and never deletes a profile. Folders come with the profile in a ZIP export, and the API filters with `GET /profiles?folder=`.
 - **Tags, status, notes.** Statuses: new, warming up, active, paused, banned. The most used tags and statuses show up in the filter on the left; search covers tags and notes too.
 - **Last launch.** A profile's row shows the time of its last launch, its exit IP and country.
 - **Start pages.** Opened on launch when no tabs are left from the previous session.
@@ -214,7 +215,7 @@ Proxies: `host:port`, `http://`, `https://`, `socks4://`, `socks5://`, with `use
 
 Camoufox does not accept SOCKS5 with a password, so for the time of a launch CloutFox opens a bridge on `127.0.0.1` with a random port: the browser connects to the bridge without a password, the bridge signs in to the proxy and passes it the site names, so DNS never goes around the proxy. The bridge closes with the browser. Camoufox reaches a WireGuard tunnel through the same kind of bridge, and the Chrome engine uses a bridge for every proxy.
 
-On Linux the bridge accepts only programs of your OS user: a connection from another user of this computer is refused. Windows has no such check: while a profile runs, any program on the computer that finds the port can go out through the bridge. Proxy logins and passwords reach the browser through the process environment and never appear on the command line (which every user can see).
+The bridge accepts only programs of your OS user: on Linux the socket owner comes from /proc, on Windows from the TCP table and the process token, so another account on this computer cannot borrow the proxy while a profile runs. Proxy logins and passwords reach the browser through the process environment and never appear on the command line (which every user can see).
 
 REST API with docs: `http://127.0.0.1:8000/docs`.
 

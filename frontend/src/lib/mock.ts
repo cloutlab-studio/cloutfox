@@ -19,6 +19,7 @@ function row(name: string, extra: Partial<Row> = {}): Row {
     tags: [],
     notes: "",
     status: "",
+    folder: "",
     temporary: false,
     rotate: false,
     last: { at: null, ip: null, country: null },
@@ -59,6 +60,7 @@ export function mockApi(): Api {
     backup_hours: 0,
     backup_keep: 7,
     last_backup: "",
+    folders_closed: [],
     warmup_sites: ["google.com", "wikipedia.org", "bbc.com"],
     warmup_count: 10,
     language: "ru",
@@ -71,7 +73,7 @@ export function mockApi(): Api {
   const api: Partial<Api> = {
     boot: async () => {
       const strings = await fetch("/mock-strings.json").then((r) => (r.ok ? r.json() : ru)).catch(() => ru);
-      return { locked: location.hash === "#lock", language: "ru", strings, settings, version: "dev", platform: "linux" };
+      return { locked: location.hash === "#lock", language: "ru", strings, settings, version: "dev", platform: "linux", panel_restarts: 0 };
     },
     unlock: async (pw) => (pw === "pass" ? {} : { error: "Неверный пароль" }),
     unlock_recovery: async () => ({ error: "Ключ восстановления не подходит" }),
@@ -88,6 +90,7 @@ export function mockApi(): Api {
     ],
     options: async () => ({
       statuses: ["", "new", "warming", "active", "paused", "banned"],
+      folders: ["ads", "ads/fb"],
       extensions: [{ id: "ublock", name: "uBlock Origin", version: "1.60", engine: "camoufox" }],
       max_bulk: 500,
       warmup_counts: [3, 5, 10, 15, 20, 30],
@@ -130,6 +133,13 @@ export function mockApi(): Api {
       configs: [{ id: "claude-code", name: "Claude Code", where: "terminal", language: "bash", code: "claude mcp add cloutfox ..." }],
     }),
     mcp_health: async () => ({ ok: true }),
+    panel_ready: async () => ({}),
+    folder_create: async () => ({}),
+    folder_rename: async () => ({}),
+    folder_delete: async () => ({}),
+    profiles_move: async () => ({}),
+    diagnostics_export: async () => ({ message: "dev: the file is not written" }),
+    open_data_folder: async () => ({}),
     security_info: async () => ({ master: false, duress: false }),
     activity: async () => [],
     cookies_info: async () => ({ fingerprint: "Windows, 1920x1080, 8" }),

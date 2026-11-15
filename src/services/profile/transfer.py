@@ -7,6 +7,7 @@ from datetime import datetime
 from ...core.config import FINGERPRINT_FILE
 from ...core.logging import get_logger
 from ...models.profile import Profile
+from ...utils.fs import make_private
 from ...utils.validation import validate_profile_name
 from ..browser.fingerprint import CHROME_PERSONA_FILE
 from .codec import profile_from_dict
@@ -97,6 +98,7 @@ def import_from_zip(
                 profile_data_dir = os.path.join(data_dir, name)
                 root = pathlib.Path(profile_data_dir).resolve()
                 root.mkdir(exist_ok=True, parents=True)
+                make_private(root)
 
                 for file in data_files:
                     if file.endswith("/"):

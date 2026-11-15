@@ -1,6 +1,7 @@
 """The panel's bridge: what the page can read and change."""
 
 import json
+import time
 
 import pytest
 
@@ -116,3 +117,16 @@ def test_pump_sends_escaped_data(bridge):
     assert json.loads(sent[1].split("push(", 1)[1].rsplit(")", 1)[0]) == {"type": "changed"}
     pump.tick()
     assert len(sent) == 2  # nothing new, nothing sent
+
+
+def test_panel_ready_is_the_liveness_signal(bridge, monkeypatch):
+    assert bridge._panel_alive() is False
+    bridge.panel_ready({"heap_used": 10, "device_pixel_ratio": 2, "secret": "x"})
+    assert bridge._panel_alive() is True
+    # Only known short scalars are kept: the page is not trusted with the shape.
+    assert bridge._panel_last() == {"heap_used": 10, "device_pixel_ratio": 2}
+    assert bridge.boot()["panel_restarts"] == 0
+
+    later = time.monotonic() + 10_000
+    monkeypatch.setattr(time, "monotonic", lambda: later)
+    assert bridge._panel_alive() is False

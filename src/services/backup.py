@@ -27,12 +27,14 @@ from ..core.config import (
     DATA_DIR,
     ENCRYPTED_DIR,
     EXTENSIONS_DIR,
+    FOLDERS_FILE,
     KEYS_FILE,
     PROFILES_FILE,
     SETTINGS_FILE,
     VAULT_FILE,
 )
 from ..core.logging import get_logger
+from ..utils.fs import open_private
 from .profile.manager import TEMP_PREFIX
 from .security import crypto
 from .security.service import shred
@@ -47,6 +49,7 @@ _FILES = {
     "vault.json": VAULT_FILE,
     "profile_keys.json": KEYS_FILE,
     "settings.json": SETTINGS_FILE,
+    "folders.json": FOLDERS_FILE,
 }
 _DIRS = {"camoufox_data": DATA_DIR, "encrypted_data": ENCRYPTED_DIR, "extensions": EXTENSIONS_DIR}
 
@@ -96,7 +99,7 @@ def backup_now(
     target = dest / f"{PREFIX}{stamp}{'.cfxbak' if sealed else '.zip'}"
     tmp = target.with_name(target.name + ".part")
     try:
-        with tmp.open("wb") as raw:
+        with open_private(tmp) as raw:
             if sealed:
                 header = {"v": 1, "vault": vault.wrapped_keys()}
                 writer = crypto.StreamWriter(raw, vault.dek, MAGIC, header)

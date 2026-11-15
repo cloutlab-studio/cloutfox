@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from "../../lib/i18n.svelte";
+  import About from "./About.svelte";
   import Backups from "./Backups.svelte";
   import Extensions from "./Extensions.svelte";
   import Interface from "./Interface.svelte";
@@ -17,6 +18,7 @@
     <Warmup index={3} />
     <Extensions index={4} />
     <Backups index={5} />
+    <About index={6} />
   </div>
 </div>
 

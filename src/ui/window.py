@@ -76,19 +76,61 @@ def _allow_sound(window) -> None:
         )
 
 
-def _reload_on_crash(window) -> None:
+def _reload_on_crash(window, bridge) -> None:
     # A renderer that runs out of memory or gets killed leaves a blank window
     # with the app still running behind it; load the panel again instead.
+    # Backoff with a cap: a renderer that dies at once on every load would
+    # otherwise turn into a reload storm, which looks like a flickering app.
     with contextlib.suppress(Exception):
         from qtpy.QtCore import QTimer
 
         view = window.native.webview
+        quiet = {"count": 0}
 
         def terminated(status, code) -> None:
-            logger.warning("The panel's renderer stopped (%s, code %s); reloading", status, code)
-            QTimer.singleShot(1000, view.reload)
+            bridge._panel_restarts += 1
+            quiet["count"] += 1
+            delay = min(2 ** quiet["count"], 30)
+            logger.warning(
+                "The panel's renderer stopped (%s, code %s); reloading in %s s, %s time(s) so far",
+                status,
+                code,
+                delay,
+                bridge._panel_restarts,
+            )
+            if quiet["count"] > 5:
+                logger.error("The panel's renderer keeps stopping; not reloading any more")
+                return
+            QTimer.singleShot(delay * 1000, view.reload)
 
         view.page().renderProcessTerminated.connect(terminated)
+
+
+def _watch_panel(window, bridge) -> None:
+    """Reload a panel that never says it is ready: a dead renderer leaves a blank window.
+
+    A page that loads but fails in JavaScript shows the boot screen for good and
+    never calls panel_ready, so silence is the only signal there is. Two reloads
+    and a log line, so a real bug does not turn into an endless reload loop.
+    """
+    with contextlib.suppress(Exception):
+        from qtpy.QtCore import QTimer
+
+        view = window.native.webview
+        tries = {"n": 0}
+
+        def check() -> None:
+            if bridge._panel_alive(within=120):
+                return
+            tries["n"] += 1
+            if tries["n"] > 2:
+                logger.error("The panel did not report ready after two reloads")
+                return
+            logger.warning("The panel did not report ready; reloading (%s of 2)", tries["n"])
+            view.reload()
+            QTimer.singleShot(20_000, check)
+
+        QTimer.singleShot(15_000, check)
 
 
 class _PageSender:
@@ -155,7 +197,8 @@ class Window:
         pump.on_help = lambda r: self.bridge._log(get_string("help_requested", name=r.profile))
         self.bridge._attach(window, pump)
         window.events.before_show += _allow_sound
-        window.events.before_show += _reload_on_crash
+        window.events.before_show += lambda w: _reload_on_crash(w, self.bridge)
+        window.events.before_show += lambda w: _watch_panel(w, self.bridge)
         window.events.before_show += sender.attach
 
         def stay_home() -> None:

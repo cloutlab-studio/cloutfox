@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.1.0] - 2026-11-15
+
+### Added
+- Folders: put profiles into folders up to three levels deep, drag a row onto a folder in the rail, or use "Move to folder" in the row menu and in the bulk bar. An empty folder stays until you delete it; deleting one moves its profiles one level up. Folders travel with a ZIP export, and the API filters with `GET /profiles?folder=`.
+- Settings → About: save a diagnostics archive (version, logs, process list, settings, the panel's own numbers) with one button and open the data folder. No passwords, proxies, cookies, WireGuard configs or tokens go into it.
+- The panel now says how heavy it is: the renderer's heap, node count and scaling go into the log, a window that never comes up is reloaded twice and logged, and after a renderer crash the panel says so instead of starting silently over.
+
+### Fixed
+- Windows: deleting a tree clears the read-only attribute and retries a file another process holds, so a deleted or replaced profile no longer leaves files behind.
+- Windows: packing an encrypted profile retries after a stop, and a failed pack keeps the newer unpacked copy instead of deleting it.
+- Windows: stopping a profile waits 15 seconds for a clean close instead of 2, so a heavy profile saves its tabs.
+- Windows: the cookie tool and the browser runner no longer flash a console window from the installed app.
+- Windows: the proxy bridge refuses connections from another OS account, as it already did on Linux.
+- Panel: a renderer that keeps dying reloads with a growing delay, at most five times.
+- Security: profile data folders and the files with proxies and keys are read-only for their owner (0700 and 0600), not for every user of the machine.
+
+### Changed
+- The checks run on every pushed branch, not only on `main`.
+- The committed panel is rendered in a browser on every push: the profile list, the folder tree, the command palette, screenshots at two window sizes.
+- Windows CI launches an encrypted profile with a Cyrillic name twice through a real browser and checks that its container is repacked, its tabs are kept and no process or unpacked folder is left.
+
 ## [3.0.0] - 2026-10-30
 
 The first release: https://github.com/cloutlab-studio/cloutfox

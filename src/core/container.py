@@ -8,6 +8,7 @@ from .config import (
     DATA_DIR,
     ENCRYPTED_DIR,
     EXTENSIONS_DIR,
+    FOLDERS_FILE,
     KEYS_FILE,
     LOG_DIR,
     LOG_LEVEL,
@@ -78,8 +79,15 @@ class Container:
         # The app opens empty right after; it must not show or reuse the old folder.
         self.settings.reset()
         return [
-            PROFILES_FILE, DATA_DIR, LOG_DIR, EXTENSIONS_DIR, BIN_DIR, *backups, SETTINGS_FILE
-        ]  # fmt: skip
+            PROFILES_FILE,
+            FOLDERS_FILE,
+            DATA_DIR,
+            LOG_DIR,
+            EXTENSIONS_DIR,
+            BIN_DIR,
+            *backups,
+            SETTINGS_FILE,
+        ]
 
     @property
     def backups(self):

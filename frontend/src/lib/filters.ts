@@ -1,4 +1,5 @@
 import type { Row } from "./bridge";
+import { inFolder } from "./folders";
 
 export const STATUSES = ["new", "warming", "active", "paused", "banned"];
 /** How many tags get their own filter: the most used ones. */
@@ -50,7 +51,12 @@ export function matches(r: Row, query: string): boolean {
   );
 }
 
-export function visible(rows: Row[], filter: string, query: string): Row[] {
+export function visible(
+  rows: Row[],
+  filter: string,
+  query: string,
+  folder: string | null = null,
+): Row[] {
   const test = filterTest(filter);
-  return rows.filter((r) => test(r) && matches(r, query));
+  return rows.filter((r) => test(r) && inFolder(r, folder) && matches(r, query));
 }

@@ -17,6 +17,7 @@ function row(name: string, extra: Partial<Row> = {}): Row {
     tags: [],
     notes: "",
     status: "",
+    folder: "",
     temporary: false,
     rotate: false,
     last: { at: null, ip: null, country: null },

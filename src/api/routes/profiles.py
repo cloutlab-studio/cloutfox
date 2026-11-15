@@ -18,6 +18,8 @@ from ...services.proxy.rotate import rotate_ip
 from ...services.security.profile_data import ProfileLocked
 from ...utils.validation import (
     MAX_NOTES_LENGTH,
+    normalize_folder,
+    validate_folder_path,
     validate_http_url,
     validate_locale,
     validate_profile_name,
@@ -96,6 +98,11 @@ def _require_meta(meta: dict, engine: str | None = None) -> None:
         )
     if len(meta.get("notes") or "") > MAX_NOTES_LENGTH:
         raise HTTPException(status_code=400, detail=f"notes: at most {MAX_NOTES_LENGTH} characters")
+    if "folder" in meta:
+        meta["folder"] = normalize_folder(meta["folder"])
+        valid, msg = validate_folder_path(meta["folder"])
+        if not valid:
+            raise HTTPException(status_code=400, detail=msg)
     checks = (
         (validate_urls, meta.get("start_urls") or []),
         (validate_http_url, meta.get("proxy_rotate_url") or ""),
@@ -125,6 +132,9 @@ def _bulk_error(e: bulk.BulkError) -> HTTPException:
 def list_profiles(
     tag: str | None = Query(None, description="Only profiles with this tag"),
     status: str | None = Query(None, description="Only profiles with this status"),
+    folder: str | None = Query(
+        None, description='Only profiles in this folder and below; "" for the top level'
+    ),
     pm: IProfileManager = Depends(get_profile_manager),
     bl: IBrowserLauncher = Depends(get_browser_launcher),
 ) -> ProfileListResponse:
@@ -133,6 +143,10 @@ def list_profiles(
         found = [p for p in found if tag.strip().lower() in p.tags]
     if status is not None:
         found = [p for p in found if p.status == status]
+    if folder is not None:
+        want = normalize_folder(folder)
+        prefix = want + "/"
+        found = [p for p in found if p.folder == want or p.folder.startswith(prefix)]
     profiles = [profile_response(p, bl) for p in found]
     return ProfileListResponse(profiles=profiles, total=len(profiles))
 

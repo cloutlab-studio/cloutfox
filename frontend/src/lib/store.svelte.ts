@@ -14,11 +14,14 @@ export const app = $state({
   master: false,
   loaded: false,
   filter: "all",
+  // null: every profile; "": no folder; "A/B": that folder and below.
+  folder: null as string | null,
   query: "",
   log: [] as LogLine[],
   settings: null as Settings | null,
   options: null as Options | null,
   version: "",
+  platform: "",
   // Bumped when the list should cascade in again (new filter, first load).
   wave: 0,
 });
@@ -115,6 +118,13 @@ export async function opened(): Promise<void> {
   };
   app.log = await py().log_history();
   await Promise.all([refresh(), loadOptions()]);
+}
+
+export function setFolder(folder: string | null): void {
+  if (app.folder === folder) return;
+  app.folder = folder;
+  app.wave++;
+  play("toggle");
 }
 
 export function setFilter(id: string): void {

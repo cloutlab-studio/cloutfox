@@ -347,3 +347,56 @@ def test_no_owner_check_off_linux(monkeypatch):
 
     monkeypatch.setattr(proxy_bridge.sys, "platform", "win32")
     assert ProxyBridge(Upstream("http", "h", 1)).only_uid is None
+
+
+@pytest.mark.skipif(not sys.platform.startswith("win"), reason="Windows checks the user SID")
+def test_windows_bridge_serves_its_own_user():
+    """The real lookup, a real loopback connection: PID from the TCP table, SID from the token."""
+
+    async def test(origin, upstream, bridge):
+        assert bridge.only_sid, "the bridge did not learn its own user"
+        status, body = await http_get_via_connect(bridge.port, "127.0.0.1", origin.port)
+        assert status == 200 and b"origin-ok" in body
+        assert bridge.refused == 0
+
+    run(_with_servers(test, Socks5Proxy))
+
+
+@pytest.mark.skipif(not sys.platform.startswith("win"), reason="Windows checks the user SID")
+def test_windows_bridge_refuses_another_user(monkeypatch):
+    from chrome_engine import proxy_bridge
+
+    async def test(origin, upstream, bridge):
+        monkeypatch.setattr(
+            proxy_bridge, "windows_socket_owner", lambda *_: (True, "S-1-5-21-0-0-0-9999")
+        )
+        status, _ = await http_get_via_connect(bridge.port, "127.0.0.1", origin.port)
+        assert status == 403
+        assert bridge.refused == 1 and "another user" in bridge.errors[-1]
+        assert origin.hits == []
+
+    run(_with_servers(test, Socks5Proxy))
+
+
+def test_unknown_windows_connection_is_allowed(monkeypatch):
+    """A socket that disappeared before the lookup must not break the browser."""
+    from chrome_engine import proxy_bridge
+
+    async def test(origin, upstream, bridge):
+        monkeypatch.setattr(proxy_bridge, "windows_socket_owner", lambda *_: (False, None))
+        status, _ = await http_get_via_connect(bridge.port, "127.0.0.1", origin.port)
+        assert status == 200
+        assert bridge.refused == 0
+
+    async def go():
+        await _with_servers(test, Socks5Proxy)
+
+    # only_sid is None off Windows, so give the bridge the Windows rule for this test.
+    original = proxy_bridge.ProxyBridge.__init__
+
+    def patched(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        self.only_sid = "S-1-5-21-0-0-0-1000"
+
+    monkeypatch.setattr(proxy_bridge.ProxyBridge, "__init__", patched)
+    run(go())

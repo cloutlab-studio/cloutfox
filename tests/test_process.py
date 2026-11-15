@@ -129,3 +129,30 @@ def test_posix_signals_the_runner(monkeypatch):
     proc = StubbornProc()
     process.terminate(proc, "p", timeout=0, ask_to_close=proc.exit)
     assert proc.calls == ["terminate", "kill"]
+
+
+def test_no_console_window_opens_for_the_runner(monkeypatch):
+    """The installed app has no console, so a child console program would show one."""
+    captured = {}
+    monkeypatch.setattr(process.subprocess, "Popen", lambda args, **kw: captured.update(kw))
+    process.spawn_browser(Profile(name="p"))
+    expected = getattr(process.subprocess, "CREATE_NO_WINDOW", 0)
+    assert captured["creationflags"] == expected
+
+
+def test_kill_tree_hides_the_taskkill_window(monkeypatch):
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured.update(args=args, **kwargs)
+
+        class Done:
+            returncode = 0
+
+        return Done()
+
+    monkeypatch.setattr(process, "_WINDOWS", True)
+    monkeypatch.setattr(process.subprocess, "run", fake_run)
+    process.kill_tree(type("P", (), {"pid": 42})())
+    assert captured["args"][:2] == ["taskkill", "/PID"]
+    assert captured["creationflags"] == getattr(process.subprocess, "CREATE_NO_WINDOW", 0)

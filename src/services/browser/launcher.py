@@ -316,7 +316,7 @@ class BrowserLauncher:
                     self._busy.discard(profile.name)
         return True
 
-    def stop_profile(self, profile_name: str, timeout: int = 2) -> bool:
+    def stop_profile(self, profile_name: str, timeout: int = 15) -> bool:
         with self._lock:
             if profile_name not in self._active_sessions:
                 return False

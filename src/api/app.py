@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 logger = get_logger("api")
 
 API_PREFIX = "/api/v1"
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 
 
 def create_app(container: Container, self_url: str | None = None) -> FastAPI:

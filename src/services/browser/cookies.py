@@ -69,6 +69,8 @@ def _call_tool(
             timeout=_TIMEOUT,
             cwd=pathlib.Path.cwd(),
             env=env,
+            # pythonw.exe has no console: without this a child python.exe opens one.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired as e:
         raise CookieError(f"Cookie {action} timed out after {_TIMEOUT}s") from e

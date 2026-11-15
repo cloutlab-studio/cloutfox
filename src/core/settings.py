@@ -72,6 +72,8 @@ class Settings:
     sound_volume: int = 60
     motion: str = "system"
     cursor: bool = True
+    # Folders whose subtree is collapsed in the panel's folder tree.
+    folders_closed: list = field(default_factory=list)
 
 
 class SettingsStore:

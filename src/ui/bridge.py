@@ -15,8 +15,10 @@ from __future__ import annotations
 import contextlib
 import os
 import pathlib
+import subprocess
 import sys
 import threading
+import time
 import urllib.request
 import webbrowser
 from collections.abc import Callable
@@ -78,8 +80,11 @@ _UI_SETTINGS = {
     "sound_volume": int,
     "motion": str,
     "cursor": bool,
+    "folders_closed": list,
 }
 _COOKIE_EXT = {"json": "json", "netscape": "txt"}
+# A renderer above this heap leaks: the panel draws frames all day (see window.py).
+HEAP_WARN = 300 * 1024 * 1024
 
 
 def strings_table() -> dict[str, str]:
@@ -117,6 +122,11 @@ class Bridge:
         self._pump: Any = None
         # fingerprint.json path -> (mtime, label)
         self._devices: dict[str, tuple[float, str]] = {}
+        # What the page last said about itself (panel_ready) and when.
+        self._panel_stats: dict = {}
+        self._panel_beat = 0.0
+        # Renderer crashes in this run, counted by the window; the page shows it.
+        self._panel_restarts = 0
         if language := container.settings.current.language:
             set_language(language)
 
@@ -219,6 +229,7 @@ class Bridge:
             "tags": p.tags,
             "notes": p.notes,
             "status": p.status,
+            "folder": p.folder,
             "temporary": p.temporary,
             "rotate": bool(p.proxy_rotate_url),
             "last": {"at": last.get("at"), "ip": last.get("ip"), "country": last.get("country")},
@@ -261,6 +272,7 @@ class Bridge:
             "settings": self.settings(),
             "version": VERSION,
             "platform": sys.platform,
+            "panel_restarts": self._panel_restarts,
         }
 
     def unlock(self, password: str) -> dict:
@@ -321,6 +333,7 @@ class Bridge:
             "tags": ", ".join(p.tags),
             "notes": p.notes,
             "status": p.status,
+            "folder": p.folder,
             "start_urls": "\n".join(p.start_urls),
             "proxy_rotate_url": p.proxy_rotate_url or "",
             "extensions": p.extensions,
@@ -332,6 +345,7 @@ class Bridge:
         """Choices for the forms: engines, statuses, installed extensions, limits."""
         return {
             "statuses": list(STATUSES),
+            "folders": self._c.profile_manager.list_folders(),
             "extensions": extensions.available(),
             "max_bulk": bulk.MAX_BULK,
             "warmup_counts": list(WARMUP_COUNTS),
@@ -419,6 +433,46 @@ class Bridge:
         self._changed()
         return None
 
+    # --- folders --------------------------------------------------------------------
+
+    def folder_create(self, path: str) -> dict:
+        ok, result = self._c.profile_manager.add_folder(path)
+        if not ok:
+            return _error(result)
+        message = get_string("folder_created", name=result)
+        self._log(message)
+        self._changed()
+        return {"message": message, "path": result}
+
+    def folder_rename(self, path: str, new: str) -> dict:
+        ok, result = self._c.profile_manager.rename_folder(path, new)
+        if not ok:
+            return _error(result)
+        message = get_string("folder_renamed", old=path, name=result)
+        self._log(message)
+        self._changed()
+        return {"message": message, "path": result}
+
+    def folder_delete(self, path: str) -> dict:
+        moved = self._c.profile_manager.delete_folder(path)
+        message = get_string("folder_deleted", name=path, count=moved)
+        self._log(message)
+        self._changed()
+        return {"message": message, "moved": moved}
+
+    def profiles_move(self, names: list[str], folder: str) -> dict:
+        moved, result = self._c.profile_manager.move_profiles(names, folder)
+        if not moved and not result and names:
+            return _error(get_string("profiles_none_moved"))
+        message = get_string(
+            "profiles_moved",
+            count=moved,
+            folder=result or get_string("folder_root"),
+        )
+        self._log(message)
+        self._changed()
+        return {"message": message, "moved": moved, "folder": result}
+
     def bulk_create(self, form: dict) -> dict:
         engine = form.get("engine", "camoufox")
         if engine == "chrome" and (reason := chrome_prefetch.unsupported_reason()):
@@ -503,6 +557,8 @@ class Bridge:
                 meta["status"] = status
             if meta:
                 pm.set_meta(p.name, **meta)
+        if (folder := form.get("folder")) is not None:
+            pm.move_profiles([p.name for p in profiles], folder)
         message = get_string("bulk_edited", count=len(profiles))
         self._log(message)
         self._changed()
@@ -999,6 +1055,71 @@ class Bridge:
         message = get_string("backup_done", path=path)
         self._log(message)
         return {"message": message}
+
+    # --- about and support -----------------------------------------------------------
+
+    def panel_ready(self, panel: dict | None = None) -> dict:
+        """The page says it is alive and how heavy it is: logged, kept for diagnostics."""
+        from ..services.diagnostics import clean_panel
+
+        stats = clean_panel(panel)
+        first = not self._panel_stats
+        self._panel_stats = stats
+        self._panel_beat = time.monotonic()
+        if first:
+            logger.info("Panel ready: %s", stats or "(no numbers)")
+        else:
+            heap = stats.get("heap_used")
+            if isinstance(heap, (int, float)) and heap > HEAP_WARN:
+                logger.warning(
+                    "Panel memory grew to %d MB with %s nodes",
+                    int(heap // (1024 * 1024)),
+                    stats.get("dom_nodes"),
+                )
+            else:
+                logger.debug("Panel stats: %s", stats)
+        return {}
+
+    def _panel_alive(self, within: float = 120.0) -> bool:
+        return bool(self._panel_beat) and time.monotonic() - self._panel_beat < within
+
+    def _panel_last(self) -> dict:
+        return dict(self._panel_stats)
+
+    def diagnostics_export(self, panel: dict | None = None) -> dict:
+        """Save a ZIP for a bug report: version, logs, processes, settings, no secrets."""
+        path = self._pick_save("cloutfox-diagnostics.zip", ("ZIP (*.zip)",))
+        if not path:
+            return {"cancelled": True}
+        from ..services import diagnostics
+
+        try:
+            diagnostics.export(self._c, pathlib.Path(path), panel)
+        except OSError as e:
+            message = get_string("diagnostics_failed", error=e)
+            self._log(message)
+            return _error(message)
+        message = get_string("diagnostics_saved", path=path)
+        self._log(message)
+        return {"message": message}
+
+    def open_data_folder(self) -> dict:
+        """Reveal the folder with profiles, logs and settings in the file manager."""
+        from ..core.config import PROFILES_FILE
+
+        folder = pathlib.Path(PROFILES_FILE).resolve().parent
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            if sys.platform == "win32":
+                os.startfile(str(folder))  # noqa: S606 - opening a folder, not a program
+            else:
+                opener = "open" if sys.platform == "darwin" else "xdg-open"
+                subprocess.Popen([opener, str(folder)])
+        except OSError as e:
+            message = get_string("open_folder_failed", error=e)
+            self._log(message)
+            return _error(message)
+        return {}
 
     # --- agents (MCP) ---------------------------------------------------------------
 

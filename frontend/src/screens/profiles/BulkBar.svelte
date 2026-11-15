@@ -18,6 +18,7 @@
     <Button size="sm" icon="stop" onclick={() => act.stopMany(names)}>{t("stop")}</Button>
     <Button size="sm" icon="flame" onclick={() => act.warmup(names)}>{t("bulk_warmup")}</Button>
     <Button size="sm" icon="edit" onclick={() => act.bulkEdit(names)}>{t("bulk_edit_btn")}</Button>
+    <Button size="sm" icon="folder" onclick={() => act.moveTo(names)}>{t("folder_move_short")}</Button>
     <Button size="sm" icon="export" onclick={() => act.exportProfiles(names)}>{t("export")}</Button>
     <Button size="sm" variant="danger" icon="trash" onclick={() => act.remove(names)}>{t("delete")}</Button>
     <Button size="sm" variant="ghost" icon="close" onclick={() => selected.clear()}>{t("clear")}</Button>

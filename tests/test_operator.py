@@ -370,3 +370,25 @@ def test_shred_overwrites_large_files_in_steps(tmp_path, monkeypatch):
     service.shred(big)
     assert not big.exists()
     assert sizes == [1 << 20, 1 << 20, 1 << 20, 5]
+
+
+def test_backup_carries_the_folder_tree(workdir):
+    _home(workdir)
+    (workdir / "folders.json").write_text(json.dumps(["Clients", "Clients/Germany"]))
+    dest = workdir / "backups"
+    dest.mkdir()
+    path = backup.backup_now(str(dest), 7, Vault(workdir / "vault.json"))
+    out = workdir / "restored"
+    backup.restore(str(path), str(out))
+    assert json.loads((out / "folders.json").read_text(encoding="utf-8")) == [
+        "Clients",
+        "Clients/Germany",
+    ]
+
+
+def test_self_destruct_takes_the_folder_tree(workdir, monkeypatch):
+    from src.core import container as container_mod
+
+    monkeypatch.setattr(container_mod, "FOLDERS_FILE", str(workdir / "folders.json"))
+    paths = container_mod.Container().wipe_paths()
+    assert str(workdir / "folders.json") in paths

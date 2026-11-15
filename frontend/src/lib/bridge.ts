@@ -15,6 +15,7 @@ export interface Row {
   tags: string[];
   notes: string;
   status: string;
+  folder: string;
   temporary: boolean;
   rotate: boolean;
   last: { at: string | null; ip: string | null; country: string | null };
@@ -47,6 +48,7 @@ export interface Settings {
   backup_hours: number;
   backup_keep: number;
   last_backup: string;
+  folders_closed: string[];
   warmup_sites: string[];
   warmup_count: number;
   language: string;
@@ -63,6 +65,7 @@ export interface Boot {
   settings: Settings;
   version: string;
   platform: string;
+  panel_restarts: number;
 }
 
 export interface LogLine {
@@ -80,6 +83,7 @@ export interface Extension {
 
 export interface Options {
   statuses: string[];
+  folders: string[];
   extensions: Extension[];
   max_bulk: number;
   warmup_counts: number[];
@@ -165,6 +169,10 @@ export interface Api {
   profile_save(original: string | null, form: Record<string, unknown>): Promise<FieldError>;
   profile_delete(names: string[]): Promise<{ deleted: number; skipped: number }>;
   profile_clone(name: string, newName: string): Promise<Result | null>;
+  folder_create(path: string): Promise<Result<{ path?: string }>>;
+  folder_rename(path: string, newName: string): Promise<Result<{ path?: string }>>;
+  folder_delete(path: string): Promise<Result<{ moved?: number }>>;
+  profiles_move(names: string[], folder: string): Promise<Result<{ moved?: number }>>;
   bulk_create(form: Record<string, unknown>): Promise<Result<{ created?: number }>>;
   bulk_edit(names: string[], form: Record<string, unknown>): Promise<Result>;
   import_profiles(): Promise<{ picked: number; imported: number }>;
@@ -205,6 +213,9 @@ export interface Api {
   backup_now(): Promise<Result>;
   mcp_info(realToken: boolean): Promise<McpInfo>;
   mcp_health(): Promise<{ ok: boolean; error?: string }>;
+  panel_ready(panel?: Record<string, string | number>): Promise<Result>;
+  diagnostics_export(panel?: Record<string, string | number>): Promise<Result>;
+  open_data_folder(): Promise<Result>;
   open_external(url: string): Promise<Result>;
 }
 

@@ -12,7 +12,9 @@ import sys
 import tempfile
 import time
 
-DATA = pathlib.Path(tempfile.mkdtemp(prefix="cloutfox-stop-e2e-"))
+DATA = pathlib.Path(
+    os.environ.get("CLOUTFOX_E2E_DIR") or tempfile.mkdtemp(prefix="cloutfox-stop-e2e-")
+)
 os.environ["CLOUTFOX_HEADLESS"] = "true"
 os.environ["CLOUTFOX_DATA_DIR"] = str(DATA / "data")
 os.environ["CLOUTFOX_PROFILES_FILE"] = str(DATA / "profiles.json")

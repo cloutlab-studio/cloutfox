@@ -317,9 +317,11 @@ def test_a_failed_pack_keeps_the_unpacked_copy(env, monkeypatch):
     def disk_full(*_):
         raise OSError("No space left on device")
 
+    real = data._pack
     monkeypatch.setattr(data, "_pack", disk_full)
-    with pytest.raises(OSError):
-        data.release("p")
-    monkeypatch.undo()
-    monkeypatch.setattr(profile_data, "work_root", lambda: work.parent.parent)
+    monkeypatch.setattr(profile_data.time, "sleep", lambda seconds: None)
+    # No raise: the app keeps working and the newer copy stays for the next start.
+    data.release("p")
+    assert work.exists() and (work / profile_data._OPEN_MARKER).exists()
+    monkeypatch.setattr(data, "_pack", real)
     assert (data.acquire("p") / "storage" / "x.txt").read_text() == "session"

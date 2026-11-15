@@ -4,16 +4,24 @@ import json
 import os
 import pathlib
 import secrets
-import shutil
 import threading
 import time
 from datetime import datetime
 from typing import Any
 
-from ...core.config import DATA_DIR, PROFILES_FILE
+from ...core.config import DATA_DIR, FOLDERS_FILE, PROFILES_FILE
 from ...core.logging import get_logger
+from ...core.strings import get_string
 from ...models.profile import META_FIELDS, Profile
-from ...utils.validation import normalize_tags, normalize_urls, validate_profile_name
+from ...utils.fs import make_private, remove_tree, write_private
+from ...utils.validation import (
+    folder_ancestors,
+    normalize_folder,
+    normalize_tags,
+    normalize_urls,
+    validate_folder_path,
+    validate_profile_name,
+)
 from .codec import profile_from_dict
 from .transfer import export_to_zip, import_from_zip, read_profile_meta
 
@@ -46,9 +54,125 @@ class ProfileManager:
         # Set when profiles.json exists but could not be read: saving would replace
         # every profile with whatever is in memory, so saves are refused.
         self.load_error: str | None = None
+        # The folder tree: paths that exist even while they hold no profile.
+        self.folders: set[str] = set()
         self._load_profiles()
+        self._load_folders()
         pathlib.Path(DATA_DIR).mkdir(exist_ok=True, parents=True)
+        make_private(DATA_DIR)
         self._remove_stale_temporary()
+
+    # --- folders ---------------------------------------------------------------------
+
+    def _load_folders(self) -> None:
+        try:
+            raw = json.loads(pathlib.Path(FOLDERS_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raw = []
+        self.folders = {
+            value for value in raw if isinstance(value, str) and normalize_folder(value) == value
+        }
+        for profile in self.profiles.values():
+            self.folders.update(folder_ancestors(profile.folder))
+
+    def _save_folders(self) -> None:
+        try:
+            write_private(
+                pathlib.Path(FOLDERS_FILE),
+                json.dumps(sorted(self.folders), indent=2).encode("utf-8"),
+            )
+        except OSError as e:
+            logger.warning("Could not save %s: %s", FOLDERS_FILE, e)
+
+    def list_folders(self) -> list[str]:
+        with self._lock:
+            return sorted(self.folders)
+
+    def add_folder(self, folder: str) -> tuple[bool, str]:
+        """Create a folder (and its parents); returns (ok, path or message)."""
+        text = normalize_folder(folder)
+        ok, message = validate_folder_path(text)
+        if not ok:
+            return False, message
+        if not text:
+            return False, get_string("validation_folder_empty")
+        with self._lock:
+            self.folders.update(folder_ancestors(text))
+            self._save_folders()
+        return True, text
+
+    def rename_folder(self, old: str, new: str) -> tuple[bool, str]:
+        """Rename a folder and everything under it; the profiles move with it."""
+        old = normalize_folder(old)
+        new = normalize_folder(new)
+        ok, message = validate_folder_path(new)
+        if not ok:
+            return False, message
+        if not old or not new:
+            return False, get_string("validation_folder_empty")
+        with self._lock:
+            if old not in self.folders:
+                return False, get_string("folder_missing", name=old)
+            if new in self.folders and new != old:
+                return False, get_string("folder_exists", name=new)
+            if new.startswith(old + "/"):
+                return False, get_string("folder_into_itself")
+            prefix = old + "/"
+            for profile in self.profiles.values():
+                if profile.folder == old:
+                    profile.folder = new
+                elif profile.folder.startswith(prefix):
+                    profile.folder = new + "/" + profile.folder[len(prefix) :]
+            self.folders = {
+                (new + f[len(old) :]) if f == old or f.startswith(prefix) else f
+                for f in self.folders
+            }
+            self.folders.update(folder_ancestors(new))
+            self.save_profiles()
+            self._save_folders()
+        logger.info("Renamed folder %s to %s", old, new)
+        return True, new
+
+    def delete_folder(self, folder: str) -> int:
+        """Remove a folder and its subfolders; their profiles move to the parent."""
+        folder = normalize_folder(folder)
+        if not folder:
+            return 0
+        parent = folder.rsplit("/", 1)[0] if "/" in folder else ""
+        prefix = folder + "/"
+        with self._lock:
+            moved = 0
+            for profile in self.profiles.values():
+                if profile.folder == folder or profile.folder.startswith(prefix):
+                    profile.folder = parent
+                    moved += 1
+            self.folders = {f for f in self.folders if f != folder and not f.startswith(prefix)}
+            if moved:
+                self.save_profiles()
+            self._save_folders()
+        logger.info("Deleted folder %s, %s profile(s) moved", folder, moved)
+        return moved
+
+    def move_profiles(self, names: list[str], folder: str) -> tuple[int, str]:
+        """Put profiles into a folder (created if needed); (moved, folder or message)."""
+        text = normalize_folder(folder)
+        ok, message = validate_folder_path(text)
+        if not ok:
+            return 0, message
+        with self._lock:
+            moved = 0
+            for name in names:
+                profile = self.profiles.get(name)
+                if profile is None:
+                    continue
+                profile.folder = text
+                moved += 1
+            if text:
+                self.folders.update(folder_ancestors(text))
+            if moved:
+                self.save_profiles()
+            self._save_folders()
+            return moved, text
 
     def _remove_stale_temporary(self) -> None:
         """Data of one-time profiles left by a crash (they are never saved)."""
@@ -56,7 +180,7 @@ class ProfileManager:
             return
         for path in pathlib.Path(DATA_DIR).glob(f"{TEMP_PREFIX}*"):
             if path.is_dir() and path.name not in self.profiles:
-                shutil.rmtree(path, ignore_errors=True)
+                remove_tree(path)
 
     def add_temporary(
         self,
@@ -134,7 +258,7 @@ class ProfileManager:
         path = pathlib.Path(PROFILES_FILE)
         tmp = path.with_suffix(".json.tmp")
         try:
-            tmp.write_bytes(self._encode())
+            write_private(tmp, self._encode())
             _replace(tmp, path)
             logger.debug("Profiles saved")
         except Exception as e:
@@ -160,6 +284,7 @@ class ProfileManager:
             # does not leave an entry with no data dir on disk.
             try:
                 pathlib.Path(self._data_path(name)).mkdir(exist_ok=True, parents=True)
+                make_private(self._data_path(name))
             except OSError as e:
                 logger.warning("Could not create data dir for %s: %s", name, e)
                 return False
@@ -172,6 +297,9 @@ class ProfileManager:
                 engine=engine,
             )
             self._apply_meta(self.profiles[name], meta)
+            if folder := self.profiles[name].folder:
+                self.folders.update(folder_ancestors(folder))
+                self._save_folders()
             self.save_profiles()
             logger.info("Created profile: %s", name)
             return True
@@ -326,7 +454,7 @@ class ProfileManager:
             # Inside the lock: a profile re-created under the same (or, on a
             # case-insensitive file system, a case-variant) name must not have
             # its fresh data dir removed by this delete.
-            shutil.rmtree(self._data_path(name), ignore_errors=True)
+            remove_tree(self._data_path(name))
             if self._data is not None:
                 self._data.remove(name)
         logger.info("Deleted profile: %s", name)
@@ -371,7 +499,7 @@ class ProfileManager:
                 if not overwrite:
                     return False, f"Profile '{name}' already exists"
                 if (meta.get("engine") or "camoufox") != self.profiles[existing_key].engine:
-                    shutil.rmtree(self._data_path(existing_key), ignore_errors=True)
+                    remove_tree(self._data_path(existing_key))
                 if self._data is not None and self._data.is_encrypted(existing_key):
                     # The archive brings plain data; the old encrypted copy goes.
                     self._data.remove(existing_key)
@@ -388,9 +516,12 @@ class ProfileManager:
                 old_dir = pathlib.Path(self._data_path(existing_key))
                 new_dir = pathlib.Path(self._data_path(profile.name))
                 if old_dir.exists() and not (new_dir.exists() and old_dir.samefile(new_dir)):
-                    shutil.rmtree(old_dir, ignore_errors=True)
+                    remove_tree(old_dir)
                 del self.profiles[existing_key]
             self.profiles[profile.name] = profile
+            if profile.folder:
+                self.folders.update(folder_ancestors(profile.folder))
+                self._save_folders()
             self.save_profiles()
             logger.info("Registered imported profile: %s", profile.name)
             return True, profile.name

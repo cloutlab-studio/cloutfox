@@ -23,6 +23,7 @@ LAYOUT = {
     "KEYS_FILE": "profile_keys.json",
     "ENCRYPTED_DIR": "encrypted_data",
     "SETTINGS_FILE": "settings.json",
+    "FOLDERS_FILE": "folders.json",
     "EXTENSIONS_DIR": "extensions",
     "BIN_DIR": "bin",
 }

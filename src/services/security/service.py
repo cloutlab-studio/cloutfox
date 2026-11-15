@@ -6,10 +6,10 @@ import contextlib
 import logging
 import os
 import pathlib
-import shutil
 from collections.abc import Callable
 
 from ...core.logging import get_logger
+from ...utils.fs import remove_tree
 from .profile_data import ProfileData
 from .vault import Vault, VaultError
 
@@ -85,7 +85,7 @@ class SecurityService:
             path = pathlib.Path(raw)
             with contextlib.suppress(OSError):
                 if path.is_dir():
-                    shutil.rmtree(path, ignore_errors=True)
+                    remove_tree(path)
                 elif path.exists():
                     shred(path)
 
