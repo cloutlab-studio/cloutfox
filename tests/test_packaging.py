@@ -47,4 +47,5 @@ def test_release_notes_link_every_package():
         "SHA256SUMS",
     }
     assert not re.search(r"\{(ver|repo|download|changes)\}", text)
-    assert "### Added" in text
+    # Whatever sections the version has (a patch release may only fix things).
+    assert build.changes(ver) in text

@@ -20,7 +20,9 @@ case "$pkg" in
     fi
     ;;
 *.tar.gz)
-    pacman -Sy --noconfirm --needed curl $2 >/dev/null
+    # -Syu, not -Sy: a rolling Arch cannot install single packages into an old
+    # system (openssl 4.1 now breaks the image's libarchive and pacman).
+    pacman -Syu --noconfirm --needed curl $2 >/dev/null
     mkdir -p /opt/cloutfox
     tar -xzf "$pkg" -C /opt/cloutfox --strip-components=1
     ln -sf /opt/cloutfox/cloutfox /usr/bin/cloutfox

@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.1] - 2026-11-15
+
+Nothing changes in the app since 3.1.0.
+
+### Fixed
+- The Arch install check in the release workflow upgrades the whole container (`pacman -Syu`) instead of single packages. A rolling Arch refuses a partial upgrade now that openssl 4.1 breaks the image's own libarchive and pacman, which stopped the 3.1.0 draft release.
+
 ## [3.1.0] - 2026-11-15
 
 ### Added
