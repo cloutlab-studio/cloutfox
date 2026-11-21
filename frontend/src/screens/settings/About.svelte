@@ -5,6 +5,7 @@
   import { panelStats } from "../../lib/panel";
   import { app } from "../../lib/store.svelte";
   import { report } from "../../lib/toast.svelte";
+  import { installUpdate } from "../../lib/update";
   import Section from "./Section.svelte";
 
   let { index }: { index: number } = $props();
@@ -25,7 +26,7 @@
   }
 
   async function install() {
-    report(await py().update_install());
+    await installUpdate(release!.latest!);
   }
 
   async function checkUpdates() {

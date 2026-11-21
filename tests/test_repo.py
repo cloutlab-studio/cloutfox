@@ -90,3 +90,30 @@ def test_a_missing_package_set_is_an_error(tmp_path):
 def test_version_comes_from_the_package(tmp_path):
     make_deb(tmp_path, "cloutfox_1.2.3_amd64.deb", "1.2.3")
     assert repo.version_of(tmp_path) == "1.2.3"
+
+
+def test_secret_fingerprint_comes_from_the_fpr_record():
+    colons = "\n".join(
+        [
+            "sec:u:4096:1:6A3ED7A0B8E30C7E:1:::u:::scESC:::+:::23::0:",
+            "fpr:::::::::C9ADFF851AB7B416539C033C6A3ED7A0B8E30C7E:",
+            "uid:u::::1::ABC::CloutFox packages::::::::::0:",
+            "ssb:u:4096:1:1111:1::::::e:::+:::23:",
+            "fpr:::::::::2222222222222222222222222222222222222222:",
+        ]
+    )
+    assert repo.secret_fingerprint(colons) == "C9ADFF851AB7B416539C033C6A3ED7A0B8E30C7E"
+    assert repo.secret_fingerprint("") is None
+
+
+def test_manifest_lists_the_release_files():
+    sums = (
+        f"{'a' * 64}  CloutFox-3.2.0-setup-x64.exe\n{'b' * 64} *cloutfox_3.2.0_amd64.deb\nnoise\n"
+    )
+    data = repo.manifest("3.2.0-1", sums)
+    assert data["version"] == "3.2.0"
+    assert data["url"].endswith("/releases/tag/v3.2.0")
+    assert data["assets"] == {
+        "CloutFox-3.2.0-setup-x64.exe": "a" * 64,
+        "cloutfox_3.2.0_amd64.deb": "b" * 64,
+    }

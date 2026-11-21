@@ -86,6 +86,7 @@ export function mockApi(): Api {
       help: location.hash === "#help" ? [{ id: "h1", profile: "shop-facebook-01", reason: "Solve the captcha on the login page, please." }] : [],
       master: false,
       update: null,
+      installed: null,
     }),
     log_history: async () => [
       { id: 1, at: "14:05:01", text: "Запускаю shop-facebook-01..." },
@@ -147,6 +148,7 @@ export function mockApi(): Api {
     update_check: async () => ({ available: false, current: "dev", latest: "dev", url: "", skipped: false, message: "dev: no updates" }),
     update_install: async () => ({ message: "dev: no download" }),
     update_dismiss: async () => ({}),
+    restart_app: async () => ({ message: "dev: no restart" }),
     security_info: async () => ({ master: false, duress: false }),
     activity: async () => [],
     cookies_info: async () => ({ fingerprint: "Windows, 1920x1080, 8" }),

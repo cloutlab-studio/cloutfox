@@ -4,16 +4,23 @@
   import { py } from "../../lib/bridge";
   import { t } from "../../lib/i18n.svelte";
   import { app, refresh } from "../../lib/store.svelte";
-  import { report } from "../../lib/toast.svelte";
+  import { installUpdate, restartApp } from "../../lib/update";
 
   let busy = $state(false);
   const update = $derived(app.update);
+  const installed = $derived(app.installed);
 
   async function install() {
     busy = true;
-    report(await py().update_install());
+    await installUpdate(update!.latest);
     busy = false;
     void refresh();
+  }
+
+  async function restart() {
+    busy = true;
+    await restartApp();
+    busy = false;
   }
 
   async function later() {
@@ -22,7 +29,15 @@
   }
 </script>
 
-{#if update?.available && !update.skipped}
+{#if installed}
+  <div class="bar" role="status">
+    <Icon name="bolt" size={16} />
+    <span class="text">{t("update_installed", { version: installed })}</span>
+    <Button size="sm" variant="accent" icon="refresh" {busy} onclick={restart}>
+      {t("update_restart_now")}
+    </Button>
+  </div>
+{:else if update?.available && !update.skipped}
   <div class="bar" role="status">
     <Icon name="bolt" size={16} />
     <span class="text">{t("update_available", { version: update.latest })}</span>

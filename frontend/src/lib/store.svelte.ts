@@ -23,6 +23,7 @@ export const app = $state({
   version: "",
   platform: "",
   update: null as import("./bridge").UpdateInfo | null,
+  installed: null as string | null,
   // Bumped when the list should cascade in again (new filter, first load).
   wave: 0,
 });
@@ -63,6 +64,7 @@ export function refresh(): Promise<void> {
       app.help = snap.help;
       app.master = snap.master;
       app.update = snap.update;
+      app.installed = snap.installed;
       const names = new Set(snap.profiles.map((r) => r.name));
       for (const n of selected) if (!names.has(n)) selected.delete(n);
       if (!app.loaded) {

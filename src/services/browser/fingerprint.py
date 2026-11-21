@@ -9,12 +9,19 @@ fingerprint and every later launch reuses it from the profile's data dir.
 import json
 import os
 import pathlib
+import warnings
 from typing import Any
 
 from ...core.config import FINGERPRINT_FILE
 from ...core.logging import get_logger
 
 logger = get_logger("browser.fingerprint")
+
+# Camoufox warns on every launch that passing a fingerprint is not recommended.
+# Keeping one per profile is the point of this module, and the runners' stderr
+# ends up in the panel's log, where three lines of a Python warning per launch
+# read like an error.
+warnings.filterwarnings("ignore", message="Passing your own fingerprint", category=RuntimeWarning)
 
 
 def fingerprint_path(profile_dir: str) -> str:

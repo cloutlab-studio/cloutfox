@@ -22,6 +22,7 @@ import email.utils
 import gzip
 import hashlib
 import io
+import json
 import pathlib
 import shutil
 import subprocess
@@ -61,6 +62,8 @@ PAGE = """<!doctype html>
 <p class="lead">The apt and dnf repositories for
 <a href="https://github.com/cloutlab-studio/cloutfox">CloutFox</a>, version {version}.
 Updates arrive with the normal system update.</p>
+<p>The .deb and .rpm from the <a href="https://github.com/cloutlab-studio/cloutfox/releases">releases page</a>
+add this repository by themselves when installed. The commands below do the same by hand.</p>
 
 <h2>Debian, Ubuntu, Mint</h2>
 <pre><code>sudo curl -fsSL {base}/apt/cloutfox.gpg -o /usr/share/keyrings/cloutfox.gpg
@@ -71,17 +74,23 @@ sudo apt install cloutfox</code></pre>
 <p>Later updates: <code>sudo apt update &amp;&amp; sudo apt upgrade</code>.</p>
 
 <h2>Fedora, RHEL, openSUSE</h2>
-<pre><code>sudo curl -fsSL {base}/apt/cloutfox.gpg -o /etc/pki/rpm-gpg/cloutfox.gpg
+<pre><code>sudo curl -fsSL {base}/apt/cloutfox.asc -o /etc/pki/rpm-gpg/cloutfox.asc
 sudo tee /etc/yum.repos.d/cloutfox.repo &lt;&lt;'EOF'
 [cloutfox]
 name=CloutFox
 baseurl={base}/rpm/x86_64
 enabled=1
 gpgcheck=1
-gpgkey=file:///etc/pki/rpm-gpg/cloutfox.gpg
+gpgkey=file:///etc/pki/rpm-gpg/cloutfox.asc
+metadata_expire=6h
 EOF
 sudo dnf install cloutfox</code></pre>
-<p>Later updates: <code>sudo dnf upgrade</code>.</p>
+<p>Later updates: <code>sudo dnf upgrade</code>. On openSUSE put the same file into
+<code>/etc/zypp/repos.d/</code> and use <code>zypper</code>.</p>
+
+<h2>Windows and AppImage</h2>
+<p>CloutFox updates itself: when a new version is out, a bar above the profile list offers
+"Install update", and Settings → About has the same button.</p>
 
 <h2>Signing key</h2>
 <p>The repository and its packages are signed with
@@ -263,14 +272,48 @@ def sign_rpms(files: list[pathlib.Path]) -> bool:
     key = subprocess.run(
         ["gpg", "--batch", "--list-secret-keys", "--with-colons"], capture_output=True, text=True
     )
-    fingerprint = next(
-        (line.split(":")[9] for line in key.stdout.splitlines() if line.startswith("sec:")), None
-    )
+    fingerprint = secret_fingerprint(key.stdout)
     if not fingerprint:
         return False
     for path in files:
         _run(["rpm", "--define", f"_gpg_name {fingerprint}", "--addsign", str(path)])
+    unsigned = [path.name for path in files if not rpm_signed(path)]
+    if unsigned:
+        raise RepoError(f"rpm --addsign left these unsigned: {unsigned}")
     return True
+
+
+def secret_fingerprint(colons: str) -> str | None:
+    """The fingerprint of the first secret key in `gpg --with-colons` output.
+
+    The `sec` record does not carry it: the `fpr` record right after it does.
+    Reading field 10 of `sec` gave an empty name, so 3.1.2 shipped unsigned rpms
+    that dnf, with gpgcheck=1, refused to install.
+    """
+    after_sec = False
+    for line in colons.splitlines():
+        if line.startswith("sec:"):
+            after_sec = True
+        elif after_sec and line.startswith("fpr:"):
+            return line.split(":")[9] or None
+    return None
+
+
+def rpm_signed(path: pathlib.Path) -> bool:
+    done = subprocess.run(
+        [
+            "rpm",
+            "-qp",
+            "--nosignature",
+            "--qf",
+            "%{RSAHEADER:pgpsig}|%{SIGPGP:pgpsig}|%{OPENPGP:pgpsig}",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    fields = done.stdout.strip().split("|")
+    return done.returncode == 0 and any(f and f != "(none)" for f in fields)
 
 
 def build_apt(dist: pathlib.Path, site: pathlib.Path, version: str) -> list[pathlib.Path]:
@@ -307,7 +350,28 @@ def build_rpm(dist: pathlib.Path, site: pathlib.Path) -> list[pathlib.Path]:
         shutil.copy2(rpm, folder / rpm.name)
     sign_rpms(sorted(folder.glob("*.rpm")))
     _run(["createrepo_c", "--quiet", "--checksum", "sha256", "--database", str(folder)])
+    sign_repomd(folder / "repodata")
     return rpms
+
+
+def sign_repomd(repodata: pathlib.Path) -> bool:
+    """repomd.xml.asc and repomd.xml.key: zypper refuses a repository without them."""
+    if not _has_secret_key():
+        return False
+    _run(
+        [
+            "gpg",
+            "--batch",
+            "--yes",
+            "--armor",
+            "--detach-sign",
+            "-o",
+            str(repodata / "repomd.xml.asc"),
+            str(repodata / "repomd.xml"),
+        ]
+    )
+    shutil.copy2(KEYS / "cloutfox.asc", repodata / "repomd.xml.key")
+    return True
 
 
 def fingerprint() -> str:
@@ -340,13 +404,41 @@ def version_of(dist: pathlib.Path) -> str:
     raise RepoError("no packages in dist")
 
 
-def build(dist: pathlib.Path, site: pathlib.Path, base_url: str = BASE_URL) -> dict:
+RELEASES = "https://github.com/cloutlab-studio/cloutfox/releases"
+
+
+def manifest(version: str, sums: str) -> dict:
+    """latest.json: what the app's update check reads (src/services/updates.py)."""
+    assets = {}
+    for line in sums.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and len(parts[0]) == 64:
+            assets[parts[1].lstrip("*")] = parts[0].lower()
+    upstream = version.split("-")[0]
+    return {
+        "version": upstream,
+        "url": f"{RELEASES}/tag/v{upstream}",
+        "published": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "assets": assets,
+    }
+
+
+def build(
+    dist: pathlib.Path, site: pathlib.Path, base_url: str = BASE_URL, sums: str | None = None
+) -> dict:
     if site.exists():
         shutil.rmtree(site)
     site.mkdir(parents=True)
     version = version_of(dist)
     build_apt(dist, site, version)
     build_rpm(dist, site)
+    sums_file = dist / "SHA256SUMS"
+    if sums is None and sums_file.exists():
+        sums = sums_file.read_text(encoding="utf-8")
+    if sums is not None:
+        (site / "latest.json").write_text(
+            json.dumps(manifest(version, sums), indent=2) + "\n", encoding="utf-8"
+        )
     (site / "index.html").write_text(
         PAGE.format(
             version=version,

@@ -49,6 +49,8 @@ export interface Snapshot {
   help: HelpRequest[];
   master: boolean;
   update: UpdateInfo | null;
+  /** A newer version already on disk (apt or dnf updated it): restart to use it. */
+  installed: string | null;
 }
 
 export interface Settings {
@@ -231,6 +233,7 @@ export interface Api {
   update_check(): Promise<Result<UpdateInfo & { message?: string }>>;
   update_install(): Promise<Result<{ kind?: string }>>;
   update_dismiss(version?: string): Promise<Result>;
+  restart_app(): Promise<Result>;
   open_external(url: string): Promise<Result>;
 }
 

@@ -49,7 +49,7 @@ Builds are on the [latest release](https://github.com/cloutlab-studio/cloutfox/r
 - **Windows and SmartScreen.** The Windows builds are not code-signed yet, so Windows shows "Windows protected your PC". Click "More info" → "Run anyway".
 - **Verifying files.** `SHA256SUMS` sits next to the builds: `sha256sum -c SHA256SUMS --ignore-missing` on Linux, `Get-FileHash <file>` in PowerShell.
 - **Requirements.** An x86_64 CPU, Windows 10 or 11, or Linux with glibc 2.34+ (Ubuntu 22.04, Debian 12, Fedora 36, RHEL 9 and newer), 4 GB of RAM, about 4 GB of disk space including Camoufox.
-- **Updating.** Install the new version over the old one. Profiles, cookies and settings are kept.
+- **Updating.** The app updates itself (see [Updates](#updates)); installing a new version over the old one works too. Profiles, cookies and settings are kept.
 - **Uninstalling.** "Apps" on Windows, `sudo apt remove cloutfox` or `sudo dnf remove cloutfox` on Linux. Your data stays in the data folder (below); delete it by hand if you no longer need it.
 
 ### Where the data lives
@@ -156,9 +156,18 @@ Everything here is optional and off by default. Switch it on in Settings (the ge
 
 ## Updates
 
-- **Automatic check.** On the first start CloutFox asks whether it may ask GitHub once a day for a newer version; the switch is in Settings → Interface. The only request is an HTTPS GET of the public release information, and nothing about the computer is sent.
-- **In the app.** When a newer version exists, a bar above the list offers "Install update": it downloads the release file, checks its SHA-256 against `SHA256SUMS` and starts the installer (the Windows setup, `apt` or `dnf` behind the system password prompt, or the AppImage replaces itself). CloutFox never replaces itself silently.
-- **With the system package manager.** Debian, Ubuntu, Fedora and openSUSE can take CloutFox from `https://software.cloutlab.studio`, and then `apt upgrade` or `dnf upgrade` bring new versions too. The commands are on that page.
+- **Automatic check.** On the first start CloutFox asks whether it may check once a day for a newer version; the switch is in Settings → Interface. The request is an HTTPS GET of `https://software.cloutlab.studio/latest.json` (the GitHub releases API if that fails), and nothing about the computer is sent.
+- **In the app.** When a newer version exists, a bar above the list offers "Install update" (Settings → About has the same button). After you confirm, CloutFox downloads the file for your install, checks its SHA-256, stops running profiles (they keep their tabs), installs and opens again:
+
+  | Installed from | What the button does |
+  | --- | --- |
+  | Windows setup (exe) | runs the setup silently once CloutFox has closed, for you or for all users as before |
+  | Windows MSI | runs the MSI after a Windows admin prompt |
+  | deb or rpm | `apt` or `dnf` behind the system password prompt |
+  | AppImage | replaces the AppImage file |
+  | zip, tar.gz, source | opens the release page: download and unpack it yourself |
+
+- **With the system update.** Installing the .deb or .rpm adds the CloutFox repository at `https://software.cloutlab.studio`, so `apt upgrade`, `dnf upgrade` and the desktop's software center bring new versions too. When the system has updated CloutFox while it was open, the bar says so and offers "Restart". To install without the repository, put `repo=no` into `/etc/default/cloutfox` first; deleting the repository file later also keeps it away.
 
 ## AI agents and MCP
 

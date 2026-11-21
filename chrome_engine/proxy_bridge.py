@@ -24,6 +24,7 @@ import os
 import ssl
 import struct
 import sys
+import time
 from collections import deque
 from dataclasses import dataclass
 from urllib.parse import unquote, urlsplit
@@ -244,6 +245,25 @@ def own_sid() -> str | None:
         return None
 
 
+# A page opens dozens of connections from the same browser process: its user is
+# looked up once per PID for a short while instead of opening its token each time.
+# Short, because Windows reuses PIDs.
+_SID_TTL = 30.0
+_sid_cache: dict[int, tuple[float, str | None]] = {}
+
+
+def _cached_sid(pid: int) -> str | None:
+    now = time.monotonic()
+    hit = _sid_cache.get(pid)
+    if hit is not None and now - hit[0] < _SID_TTL:
+        return hit[1]
+    sid = _windows_process_sid(pid)
+    if len(_sid_cache) > 256:
+        _sid_cache.clear()
+    _sid_cache[pid] = (now, sid)
+    return sid
+
+
 def windows_socket_owner(peer: tuple, local: tuple) -> tuple[bool, str | None]:
     """(the connection was found in the table, the SID of the user who owns it)."""
     try:
@@ -253,7 +273,7 @@ def windows_socket_owner(peer: tuple, local: tuple) -> tuple[bool, str | None]:
     if pid is None:
         return False, None
     try:
-        return True, _windows_process_sid(pid)
+        return True, _cached_sid(pid)
     except Exception:
         return True, None
 
@@ -480,7 +500,7 @@ class ProxyBridge:
         if task:
             self._clients.add(task)
         try:
-            if not self._allowed(writer):
+            if not await self._allowed_off_loop(writer):
                 self.refused += 1
                 writer.write(b"HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n")
                 return
@@ -493,6 +513,12 @@ class ProxyBridge:
             await _close(writer)
             if task:
                 self._clients.discard(task)
+
+    async def _allowed_off_loop(self, writer: asyncio.StreamWriter) -> bool:
+        """The owner lookup reads the whole TCP table: never on the loop that moves the bytes."""
+        if self.only_uid is None and self.only_sid is None:
+            return True
+        return await asyncio.get_running_loop().run_in_executor(None, self._allowed, writer)
 
     def _allowed(self, writer: asyncio.StreamWriter) -> bool:
         if self.only_uid is None and self.only_sid is None:

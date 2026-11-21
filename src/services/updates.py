@@ -1,9 +1,17 @@
-"""Is there a newer CloutFox on GitHub?
+"""Is there a newer CloutFox, and how does this copy get it?
 
-Only when a person presses "Check for updates": one HTTPS GET to the public
-releases API, no identifier, no telemetry, nothing sent about the machine. The
-answer is a version to compare and the release page to open; the app never
-downloads or installs anything by itself.
+The check is opt-in: one HTTPS GET of `latest.json` on software.cloutlab.studio
+(GitHub Pages, written by the Packages workflow when a release is published),
+with the GitHub releases API as the fallback. No identifier, no telemetry,
+nothing about the machine. The static file matters: the API allows 60 requests
+an hour per address, and behind a provider's shared address that runs out.
+
+Installing happens only when the person presses the button. How depends on how
+this copy was installed (`plan`): the Windows setup or the MSI run after the app
+has closed, then start it again; the deb or rpm goes through the system package
+manager behind the password prompt; an AppImage replaces itself. A zip or a
+source checkout gets the release page instead. Every file is checked against
+the release's SHA-256 before it runs.
 """
 
 from __future__ import annotations
@@ -17,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,6 +34,7 @@ from ..core.logging import get_logger
 
 logger = get_logger("updates")
 
+MANIFEST = "https://software.cloutlab.studio/latest.json"
 API = "https://api.github.com/repos/cloutlab-studio/cloutfox/releases/latest"
 PAGE_PREFIX = "https://github.com/cloutlab-studio/cloutfox/releases/"
 TIMEOUT = 8
@@ -39,6 +49,8 @@ class UpdateError(Exception):
 class Release:
     version: str
     url: str
+    # File name -> sha256 when the answer carried them (latest.json does).
+    sums: dict[str, str] | None = None
 
 
 def parse_version(text: str) -> tuple[int, ...] | None:
@@ -84,30 +96,60 @@ def _fetch(url: str) -> bytes:
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
             return response.read(MAX_BYTES)
     except urllib.error.HTTPError as e:
-        raise UpdateError(f"GitHub answered {e.code}") from e
+        raise UpdateError(f"{urllib.parse.urlsplit(url).hostname} answered {e.code}") from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise UpdateError(str(getattr(e, "reason", e))) from e
 
 
-def latest(fetch=None) -> Release:
-    """The newest published release on GitHub, as a version and the page to open."""
-    try:
-        payload = json.loads((fetch or _fetch)(API))
-    except json.JSONDecodeError as e:
-        raise UpdateError("unreadable answer from GitHub") from e
+def _from_manifest(payload: object) -> Release:
+    if not isinstance(payload, dict):
+        raise UpdateError("unreadable latest.json")
+    version, url, assets = payload.get("version"), payload.get("url"), payload.get("assets")
+    if not isinstance(version, str) or not isinstance(url, str):
+        raise UpdateError("no version in latest.json")
+    sums = None
+    if isinstance(assets, dict):
+        sums = {
+            str(name): str(digest).lower()
+            for name, digest in assets.items()
+            if isinstance(digest, str) and len(digest) == 64
+        }
+    return _checked(version, url, sums)
+
+
+def _from_github(payload: object) -> Release:
     if not isinstance(payload, dict):
         raise UpdateError("unreadable answer from GitHub")
     tag = payload.get("tag_name")
     url = payload.get("html_url")
     if not isinstance(tag, str) or not isinstance(url, str):
         raise UpdateError("no version in the answer from GitHub")
+    return _checked(tag, url, None)
+
+
+def _checked(tag: str, url: str, sums: dict[str, str] | None) -> Release:
     version = tag.strip().lstrip("vV")
     if parse_version(version) is None:
         raise UpdateError(f"unexpected version {tag!r}")
     # The page comes from the answer, so keep it on our own releases.
     if not url.startswith(PAGE_PREFIX):
         raise UpdateError("the answer points away from our releases")
-    return Release(version=version, url=url)
+    return Release(version=version, url=url, sums=sums or None)
+
+
+def latest(fetch=None) -> Release:
+    """The newest published release: latest.json first, the GitHub API if that fails."""
+    fetch = fetch or _fetch
+    errors = []
+    for url, read in ((MANIFEST, _from_manifest), (API, _from_github)):
+        try:
+            return read(json.loads(fetch(url)))
+        except json.JSONDecodeError:
+            errors.append(f"{url}: unreadable answer")
+        except UpdateError as e:
+            errors.append(str(e))
+    logger.debug("Update check failed: %s", errors)
+    raise UpdateError(errors[-1])
 
 
 # --- installing ------------------------------------------------------------------------
@@ -115,14 +157,20 @@ def latest(fetch=None) -> Release:
 SUMS = "SHA256SUMS"
 DOWNLOAD = "https://github.com/cloutlab-studio/cloutfox/releases/download"
 CHUNK = 1024 * 256
+APP = pathlib.Path(__file__).resolve().parents[2]
+LINUX_PREFIX = pathlib.Path("/opt/cloutfox")
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+NEW_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 
 
 @dataclass(frozen=True)
 class Plan:
     """How this copy of CloutFox would be replaced: what to download and how to run it."""
 
-    kind: str  # appimage, deb, rpm, windows
+    kind: str  # inno, msi, appimage, deb, rpm
     asset: str
+    root: str = ""  # the installed folder (Windows) or the AppImage file
+    scope: str = ""  # Windows setup: "user" or "machine"
 
 
 def distro_kind(os_release: str = "/etc/os-release") -> str:
@@ -146,22 +194,49 @@ def distro_kind(os_release: str = "/etc/os-release") -> str:
     return "deb" if shutil.which("dpkg") else "rpm"
 
 
-def plan(version: str, environ=None, platform: str | None = None) -> Plan | None:
-    """The file that would replace this copy, or None when it was not installed by a package."""
+def _windows_plan(version: str, root: pathlib.Path, environ) -> Plan | None:
+    if (root / "unins000.exe").exists():
+        local = environ.get("LOCALAPPDATA", "")
+        mine = bool(local) and _inside(root, pathlib.Path(local))
+        return Plan(
+            "inno", f"CloutFox-{version}-setup-x64.exe", str(root), "user" if mine else "machine"
+        )
+    for key in ("ProgramFiles", "ProgramW6432"):
+        folder = environ.get(key)
+        if folder and _inside(root, pathlib.Path(folder)):
+            return Plan("msi", f"CloutFox-{version}-x64.msi", str(root), "machine")
+    # The zip: a folder the person unpacked anywhere, no installer to run.
+    return None
+
+
+def _inside(path: pathlib.Path, folder: pathlib.Path) -> bool:
+    try:
+        return path.resolve().is_relative_to(folder.resolve())
+    except (OSError, ValueError):
+        return False
+
+
+def plan(
+    version: str,
+    environ=None,
+    platform: str | None = None,
+    app: pathlib.Path | None = None,
+) -> Plan | None:
+    """The file that would replace this copy, or None when no installer put it there."""
     environ = os.environ if environ is None else environ
     platform = sys.platform if platform is None else platform
+    app = APP if app is None else app
     if platform == "win32":
-        return Plan("windows", f"CloutFox-{version}-setup-x64.exe")
+        # cloutfox_app.py lives in <install>\app.
+        return _windows_plan(version, app.parent, environ)
     if environ.get("APPIMAGE"):
-        return Plan("appimage", f"CloutFox-{version}-x86_64.AppImage")
-    if pathlib.Path("/opt/cloutfox").is_dir():
+        return Plan("appimage", f"CloutFox-{version}-x86_64.AppImage", environ["APPIMAGE"])
+    if _inside(app, LINUX_PREFIX):
         kind = distro_kind()
-        return Plan(
-            kind,
-            f"cloutfox_{version}_amd64.deb"
-            if kind == "deb"
-            else f"cloutfox-{version}-1.x86_64.rpm",
+        asset = (
+            f"cloutfox_{version}_amd64.deb" if kind == "deb" else f"cloutfox-{version}-1.x86_64.rpm"
         )
+        return Plan(kind, asset, str(LINUX_PREFIX))
     return None
 
 
@@ -184,69 +259,208 @@ def _download(url: str, dest: pathlib.Path, say=None) -> str:
     ):
         total = int(response.headers.get("Content-Length") or 0)
         done = 0
+        step = 0
         while chunk := response.read(CHUNK):
             out.write(chunk)
             digest.update(chunk)
             done += len(chunk)
-            if say and total and done % (CHUNK * 40) < CHUNK:
-                say(f"{done * 100 // total}%")
+            if say and total and done * 10 // total > step:
+                step = done * 10 // total
+                say(f"{step * 10}%")
     return digest.hexdigest()
 
 
-def install(target: Plan, version: str, say=lambda message: None) -> str:
-    """Download the release file, check its checksum and start the installer.
-
-    Returns a key for the panel: "update_installing" (the app will be replaced) or
-    "update_restart" (an AppImage now holds the new build). Raises UpdateError.
-    """
-    base = f"{DOWNLOAD}/v{version}"
-    try:
-        sums = _fetch_text(f"{base}/{SUMS}")
-    except UpdateError:
-        raise
-    expected = checksum_for(sums, target.asset)
+def download(target: Plan, release: Release, say=lambda message: None) -> pathlib.Path:
+    """Fetch the release file for `target` and return it once its SHA-256 matches."""
+    expected = (release.sums or {}).get(target.asset)
+    base = f"{DOWNLOAD}/v{release.version}"
+    if not expected:
+        expected = checksum_for(_fetch_text(f"{base}/{SUMS}"), target.asset)
     if not expected:
         raise UpdateError(f"{SUMS} has no {target.asset}")
     folder = pathlib.Path(tempfile.mkdtemp(prefix="cloutfox-update-"))
     file = folder / target.asset
-    say(f"download {target.asset}")
-    if _download(f"{base}/{target.asset}", file, say) != expected:
-        file.unlink(missing_ok=True)
+    say(target.asset)
+    try:
+        actual = _download(f"{base}/{target.asset}", file, say)
+    except (urllib.error.URLError, OSError) as e:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise UpdateError(str(getattr(e, "reason", e))) from e
+    if actual != expected:
+        shutil.rmtree(folder, ignore_errors=True)
         raise UpdateError("the downloaded file does not match its checksum")
+    return file
 
+
+# --- after the download -------------------------------------------------------------------
+#
+# Windows cannot replace files a running program holds, and a setup that runs
+# while CloutFox and its browsers are open either fails half way or kills them.
+# So the app starts a small hidden PowerShell that waits for it to exit, runs
+# the installer and starts CloutFox again, and then closes itself the normal way
+# (browsers stop and save their tabs). Linux replaces files under a running
+# program without trouble, so the package manager runs first and the app then
+# restarts into the new version.
+
+
+def _ps_quote(text: str) -> str:
+    return "'" + text.replace("'", "''") + "'"
+
+
+def windows_script(target: Plan, file: pathlib.Path, pid: int) -> str:
+    """The PowerShell that installs once the app with `pid` has exited."""
+    root = pathlib.Path(target.root)
+    exe = root / "CloutFox.exe"
+    if target.kind == "inno":
+        scope = "/CURRENTUSER" if target.scope == "user" else "/ALLUSERS"
+        args = f'/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS {scope} /DIR="{root}"'
+        install = (
+            f"Start-Process -FilePath {_ps_quote(str(file))} -ArgumentList {_ps_quote(args)} -Wait"
+        )
+    else:
+        args = f'/i "{file}" /passive /norestart'
+        install = (
+            f"Start-Process -FilePath 'msiexec.exe' -ArgumentList {_ps_quote(args)} "
+            "-Verb RunAs -Wait"
+        )
+    return "; ".join(
+        [
+            "$ErrorActionPreference = 'Continue'",
+            f"Wait-Process -Id {int(pid)} -Timeout 300 -ErrorAction SilentlyContinue",
+            f"try {{ {install} }} catch {{ }}",
+            f"Start-Process -FilePath {_ps_quote(str(exe))}",
+            f"Remove-Item -LiteralPath {_ps_quote(str(file.parent))} -Recurse -Force "
+            "-ErrorAction SilentlyContinue",
+        ]
+    )
+
+
+def relaunch_command(target: Plan | None, pid: int) -> list[str]:
+    """A detached shell that waits for `pid` to exit and starts CloutFox again (Linux)."""
+    if target is not None and target.kind == "appimage":
+        program = [target.root]
+    elif pathlib.Path("/usr/bin/cloutfox").exists() and _inside(APP, LINUX_PREFIX):
+        program = ["/usr/bin/cloutfox"]
+    elif (APP.parent / "cloutfox").is_file():
+        # The tar.gz: its launcher sits next to the app folder.
+        program = [str(APP.parent / "cloutfox")]
+    else:
+        program = [sys.executable, str(APP / "cloutfox_app.py")]
+    return [
+        "/bin/sh",
+        "-c",
+        'pid="$1"; shift; while kill -0 "$pid" 2>/dev/null; do sleep 0.3; done; exec "$@"',
+        "cloutfox-relaunch",
+        str(int(pid)),
+        *program,
+    ]
+
+
+def package_command(target: Plan, file: pathlib.Path) -> list[str]:
+    """The package manager call behind the system password prompt."""
+    if target.kind == "deb":
+        command = ["apt-get", "install", "-y", "--allow-downgrades", str(file)]
+    else:
+        command = ["dnf", "install", "-y", str(file)]
+        if not shutil.which("dnf") and shutil.which("zypper"):
+            command = ["zypper", "--non-interactive", "install", "--allow-unsigned-rpm", str(file)]
+    return ["pkexec", *command] if shutil.which("pkexec") else command
+
+
+def spawn_detached(command: list[str]) -> None:
+    """Start a helper that outlives this process."""
+    if sys.platform == "win32":
+        subprocess.Popen(
+            command,
+            creationflags=NO_WINDOW | NEW_GROUP,
+            close_fds=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    subprocess.Popen(
+        command,
+        start_new_session=True,
+        close_fds=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def install(target: Plan, file: pathlib.Path, pid: int, say=lambda message: None) -> None:
+    """Put the downloaded file in place. Afterwards the caller closes the app.
+
+    Windows: hands over to a PowerShell that waits for the exit. Linux: the
+    package manager (or the AppImage swap) runs now, then a relaunch helper waits
+    for the exit. Raises UpdateError when nothing was installed, so the app stays.
+    """
+    if target.kind in ("inno", "msi"):
+        script = windows_script(target, file, pid)
+        spawn_detached(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                script,
+            ]
+        )
+        return
     if target.kind == "appimage":
-        current = pathlib.Path(os.environ.get("APPIMAGE", ""))
+        current = pathlib.Path(target.root)
         if not current.is_file():
             raise UpdateError("cannot find the running AppImage")
         file.chmod(0o755)
-        os.replace(file, current)
-        return "update_restart"
-    if target.kind == "windows":
-        # Inno Setup: silent, per user, and it closes the running app by itself.
-        subprocess.Popen(
-            [
-                str(file),
-                "/VERYSILENT",
-                "/SUPPRESSMSGBOXES",
-                "/CURRENTUSER",
-                "/NORESTART",
-                "/CLOSEAPPLICATIONS",
-            ],
-            close_fds=True,
-        )
-        return "update_installing"
+        try:
+            os.replace(file, current)
+        except OSError:
+            # Another file system (the download sits in /tmp): copy, then swap.
+            staged = current.with_name(current.name + ".new")
+            shutil.copy2(file, staged)
+            staged.chmod(0o755)
+            os.replace(staged, current)
+        spawn_detached(relaunch_command(target, pid))
+        return
     if target.kind in ("deb", "rpm"):
-        command = (
-            ["apt-get", "install", "-y", str(file)]
-            if target.kind == "deb"
-            else ["dnf", "install", "-y", str(file)]
+        command = package_command(target, file)
+        say(" ".join(command[:3]))
+        done = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
         )
-        # pkexec asks for the system password in a desktop dialog; no terminal needed.
-        if shutil.which("pkexec"):
-            command = ["pkexec", *command]
-        subprocess.Popen(command, close_fds=True)
-        return "update_installing"
+        shutil.rmtree(file.parent, ignore_errors=True)
+        if done.returncode != 0:
+            # 126/127: the password prompt was closed or refused.
+            if done.returncode in (126, 127):
+                raise UpdateError("the password prompt was closed")
+            tail = (done.stdout or "").strip().splitlines()[-1:] or [f"exit {done.returncode}"]
+            raise UpdateError(tail[0])
+        spawn_detached(relaunch_command(target, pid))
+        return
     raise UpdateError(f"cannot update a {target.kind} install")
+
+
+def installed_version(app: pathlib.Path | None = None) -> str | None:
+    """The version on disk, which a system update may have replaced under the running app."""
+    path = (APP if app is None else app) / "src" / "api" / "app.py"
+    try:
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("VERSION = "):
+                    return line.split("=", 1)[1].strip().strip("\"'")
+    except OSError:
+        return None
+    return None
 
 
 def _fetch_text(url: str) -> str:

@@ -1,6 +1,6 @@
 [project]
 name = "cloutfox"
-version = "3.1.2"
+version = "3.1.3"
 description = "Anti-detect browser profile manager for Camoufox"
 readme = "README.md"
 license = "MIT"

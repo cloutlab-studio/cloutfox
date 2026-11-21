@@ -644,6 +644,14 @@ def build_linux() -> None:
                 "src": str(PACKAGING / "linux" / "apparmor-profile"),
                 "dst": "/opt/cloutfox/share/apparmor/cloutfox",
             },
+            {
+                "src": str(PACKAGING / "keys" / "cloutfox.gpg"),
+                "dst": "/opt/cloutfox/share/keys/cloutfox.gpg",
+            },
+            {
+                "src": str(PACKAGING / "keys" / "cloutfox.asc"),
+                "dst": "/opt/cloutfox/share/keys/cloutfox.asc",
+            },
         ],
         "scripts": {
             "postinstall": str(PACKAGING / "linux" / "postinstall.sh"),
@@ -882,14 +890,30 @@ def changes(ver: str) -> str:
     return "\n".join(lines[start + 1 : end]).strip()
 
 
+def upgrade_split(section: str) -> tuple[str, str]:
+    """A version's "### Upgrading" subsection and the rest of its section."""
+    lines = section.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith("### Upgrading")), None)
+    if start is None:
+        return "", section
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("### ")), len(lines))
+    upgrade = "\n".join(lines[start + 1 : end]).strip()
+    rest = "\n".join(lines[:start] + lines[end:]).strip()
+    return upgrade, rest
+
+
 def notes(ver: str) -> str:
     """The GitHub release text: packaging/release-notes.md filled in for this version."""
     template = (PACKAGING / "release-notes.md").read_text(encoding="utf-8")
+    upgrade, rest = upgrade_split(changes(ver))
+    if upgrade:
+        upgrade = f"### First update to {ver}\n\n{upgrade}\n"
     return template.format(
         ver=ver,
         repo=HOMEPAGE,
         download=f"{HOMEPAGE}/releases/download/v{ver}",
-        changes=changes(ver),
+        upgrade=upgrade,
+        changes=rest,
     )
 
 

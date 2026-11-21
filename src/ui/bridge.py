@@ -133,6 +133,10 @@ class Bridge:
         # The last answer from GitHub about a newer version, if any.
         self._update: dict | None = None
         self._update_lock = threading.Lock()
+        self._install_lock = threading.Lock()
+        self._release: Any = None
+        self._disk_stamp: float | None = None
+        self._disk_version: str | None = None
         if language := container.settings.current.language:
             set_language(language)
 
@@ -322,6 +326,7 @@ class Bridge:
             "help": [r.public() for r in c.human_requests.pending()],
             "master": c.vault.enabled,
             "update": self._update,
+            "installed": self._installed_newer(),
         }
 
     def log_history(self) -> list[dict]:
@@ -1163,30 +1168,100 @@ class Bridge:
         return {}
 
     def update_install(self) -> dict:
-        """Download the release file of this platform and start its installer."""
+        """Download this platform's release file, put it in place and restart CloutFox.
+
+        Running browsers are stopped by the normal close (they save their tabs);
+        the panel asks first. Nothing changes when the download, the checksum or
+        the password prompt fails: the app stays open on the old version.
+        """
         from ..api.app import VERSION
         from ..services import updates
 
-        info = self._update or self._check_updates(quiet=False)
-        if info.get("error"):
-            return info
-        if not info.get("available"):
-            return _error(get_string("update_none", version=VERSION))
-        target = updates.plan(info["latest"])
-        if target is None:
-            message = get_string("update_no_install", url=info["url"])
-            self._log(message)
-            return _error(message)
-        self._log(get_string("update_downloading", version=info["latest"]))
+        if not self._install_lock.acquire(blocking=False):
+            return _error(get_string("update_busy"))
         try:
-            key = updates.install(target, info["latest"], say=lambda line: self._log(line))
-        except updates.UpdateError as e:
-            message = get_string("update_install_failed", error=e)
+            info = self._update or self._check_updates(quiet=False)
+            if info.get("error"):
+                return info
+            if not info.get("available"):
+                return _error(get_string("update_none", version=VERSION))
+            target = updates.plan(info["latest"])
+            if target is None:
+                message = get_string("update_no_install", url=info["url"])
+                self._log(message)
+                return _error(message)
+            self._log(get_string("update_downloading", version=info["latest"]))
+            release = self._release or updates.Release(info["latest"], info["url"])
+            try:
+                file = updates.download(target, release, say=self._log)
+                if target.kind in ("deb", "rpm"):
+                    self._log(get_string("update_password"))
+                    # Files are replaced under the running app: stop the browsers first.
+                    self._c.browser_launcher.shutdown_all()
+                updates.install(target, file, os.getpid(), say=self._log)
+            except updates.UpdateError as e:
+                message = get_string("update_install_failed", error=e)
+                self._log(message)
+                return _error(message)
+            message = get_string("update_installing")
             self._log(message)
-            return _error(message)
-        message = get_string(key)
-        self._log(message)
-        return {"message": message, "kind": target.kind}
+            self._quit_soon()
+            return {"message": message, "kind": target.kind}
+        finally:
+            self._install_lock.release()
+
+    def restart_app(self) -> dict:
+        """Close and start again: a system update replaced CloutFox under the running app."""
+        from ..services import updates
+
+        target = updates.plan(updates.installed_version() or "0")
+        if sys.platform == "win32":
+            exe = pathlib.Path(sys.executable).parent.parent / "CloutFox.exe"
+            command = [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                f"Wait-Process -Id {os.getpid()} -Timeout 300 -ErrorAction SilentlyContinue; "
+                f"Start-Process -FilePath '{str(exe).replace(chr(39), chr(39) * 2)}'",
+            ]
+        else:
+            command = updates.relaunch_command(target, os.getpid())
+        try:
+            updates.spawn_detached(command)
+        except OSError as e:
+            return _error(str(e))
+        self._quit_soon()
+        return {"message": get_string("update_restarting")}
+
+    def _quit_soon(self, delay: float = 1.5) -> None:
+        """Close the window shortly, so the page can still show the answer."""
+
+        def close() -> None:
+            time.sleep(delay)
+            if self._window is not None:
+                with contextlib.suppress(Exception):
+                    self._window.destroy()
+
+        threading.Thread(target=close, daemon=True, name="update-quit").start()
+
+    def _installed_newer(self) -> str | None:
+        """A version on disk newer than the one running (apt or dnf updated it), cached by mtime."""
+        from ..api.app import VERSION
+        from ..services import updates
+
+        path = updates.APP / "src" / "api" / "app.py"
+        try:
+            stamp = path.stat().st_mtime
+        except OSError:
+            return None
+        if self._disk_stamp != stamp:
+            self._disk_stamp = stamp
+            self._disk_version = updates.installed_version()
+        found = self._disk_version
+        return found if found and updates.is_newer(found, VERSION) else None
 
     def _check_updates(self, quiet: bool) -> dict:
         """One request to GitHub; with `quiet` a failure stays in the log."""
@@ -1203,6 +1278,7 @@ class Bridge:
                 else:
                     logger.debug("Update check failed: %s", e)
                 return _error(str(e)) if not quiet else {}
+            self._release = release
             newer = updates.is_newer(release.version, VERSION)
             skipped = self._c.settings.current.update_skipped == release.version
             self._update = {

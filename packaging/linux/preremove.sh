@@ -1,5 +1,6 @@
 #!/bin/sh
-# Unload and remove the AppArmor profile on removal (not on upgrade).
+# On removal (not on upgrade): unload the AppArmor profile and take the
+# repository away with the package.
 set -e
 case "${1:-remove}" in
 upgrade | 1) exit 0 ;;
@@ -10,4 +11,7 @@ if [ -e /etc/apparmor.d/cloutfox ]; then
     fi
     rm -f /etc/apparmor.d/cloutfox
 fi
+rm -f /etc/apt/sources.list.d/cloutfox.sources /usr/share/keyrings/cloutfox.gpg \
+    /etc/yum.repos.d/cloutfox.repo /etc/zypp/repos.d/cloutfox.repo /etc/pki/rpm-gpg/cloutfox.asc
+rm -rf /var/lib/cloutfox
 exit 0

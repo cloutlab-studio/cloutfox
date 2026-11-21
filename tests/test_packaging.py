@@ -46,6 +46,20 @@ def test_release_notes_link_every_package():
         f"cloutfox-{ver}-src.tar.gz",
         "SHA256SUMS",
     }
-    assert not re.search(r"\{(ver|repo|download|changes)\}", text)
+    assert not re.search(r"\{(ver|repo|download|upgrade|changes)\}", text)
     # Whatever sections the version has (a patch release may only fix things).
-    assert build.changes(ver) in text
+    upgrade, rest = build.upgrade_split(build.changes(ver))
+    assert rest in text
+    assert upgrade in text
+    assert "### Upgrading" not in text
+
+
+def test_upgrade_split():
+    import sys
+
+    sys.path.insert(0, str(ROOT / "packaging"))
+    import build
+
+    section = "### Added\n- a\n\n### Upgrading\n- b\n\n### Fixed\n- c"
+    assert build.upgrade_split(section) == ("- b", "### Added\n- a\n\n### Fixed\n- c")
+    assert build.upgrade_split("### Fixed\n- c") == ("", "### Fixed\n- c")

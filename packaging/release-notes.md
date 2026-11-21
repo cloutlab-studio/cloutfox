@@ -25,6 +25,19 @@ x86_64 only. Checksums: [`SHA256SUMS`]({download}/SHA256SUMS).
 - **Install commands**: `sudo apt install ./cloutfox_{ver}_amd64.deb`, `sudo dnf install ./cloutfox-{ver}-1.x86_64.rpm`, or `chmod +x CloutFox-*.AppImage` and run it.
 - **AI agents**: while CloutFox runs, `claude mcp add --transport http cloutfox http://127.0.0.1:8000/mcp`.
 
+## Updating
+
+Your profiles, cookies, proxies and settings stay where they are: an update replaces only the program.
+
+| Installed from | How to update |
+| --- | --- |
+| **Windows** setup (.exe) or MSI | **Install update** on the bar above the profile list (or Settings → About). CloutFox stops the profiles (they keep their tabs), installs the new version and opens again. The MSI asks for admin rights. |
+| **Fedora**, openSUSE (.rpm) | `sudo dnf upgrade` or the software center: the package adds the CloutFox repository. **Install update** in the app works too. |
+| **Ubuntu, Debian** (.deb) | `sudo apt update && sudo apt upgrade` or the software center: the package adds the CloutFox repository. **Install update** in the app works too. |
+| AppImage | **Install update** replaces the file and opens the new version. |
+| zip, tar.gz | Download the new archive and unpack it in place of the old folder. |
+
+{upgrade}
 Full guide: [README]({repo}#readme) · По-русски: [README.ru.md]({repo}/blob/main/README.ru.md)
 
 <details>

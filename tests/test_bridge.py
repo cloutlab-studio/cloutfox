@@ -162,3 +162,67 @@ def test_update_check_says_what_github_has(bridge, monkeypatch):
 
     monkeypatch.setattr(updates, "latest", offline)
     assert "Network is unreachable" in bridge.update_check()["error"]
+
+
+def _available(bridge, monkeypatch):
+    from src.services import updates
+
+    monkeypatch.setattr(
+        updates,
+        "latest",
+        lambda: updates.Release(
+            "99.0.0", "https://github.com/cloutlab-studio/cloutfox/releases/tag/v99.0.0"
+        ),
+    )
+    bridge.update_check()
+    quits = []
+    monkeypatch.setattr(bridge, "_quit_soon", lambda: quits.append(True))
+    return updates, quits
+
+
+def test_update_install_closes_the_app_only_when_installed(bridge, monkeypatch, tmp_path):
+    updates, quits = _available(bridge, monkeypatch)
+    target = updates.Plan("inno", "CloutFox-99.0.0-setup-x64.exe", str(tmp_path), "user")
+    monkeypatch.setattr(updates, "plan", lambda version: target)
+    monkeypatch.setattr(updates, "download", lambda t, r, say: tmp_path / t.asset)
+    installed = []
+    monkeypatch.setattr(updates, "install", lambda t, f, pid, say: installed.append((t, pid)))
+    result = bridge.update_install()
+    assert result["kind"] == "inno" and installed and quits == [True]
+
+    def refuse(*a, **k):
+        raise updates.UpdateError("the password prompt was closed")
+
+    monkeypatch.setattr(updates, "install", refuse)
+    assert "password prompt" in bridge.update_install()["error"]
+    assert quits == [True]
+
+
+def test_update_install_without_an_installer_points_to_the_page(bridge, monkeypatch):
+    updates, quits = _available(bridge, monkeypatch)
+    monkeypatch.setattr(updates, "plan", lambda version: None)
+    assert "v99.0.0" in bridge.update_install()["error"]
+    assert quits == []
+
+
+def test_snapshot_says_when_a_newer_version_is_on_disk(bridge, monkeypatch, tmp_path):
+    from src.services import updates
+
+    (tmp_path / "src" / "api").mkdir(parents=True)
+    (tmp_path / "src" / "api" / "app.py").write_text('VERSION = "99.0.0"\n')
+    monkeypatch.setattr(updates, "APP", tmp_path)
+    bridge.start()
+    assert bridge.snapshot()["installed"] == "99.0.0"
+    (tmp_path / "src" / "api" / "app.py").write_text('VERSION = "0.0.1"\n')
+    bridge._disk_stamp = None
+    assert bridge.snapshot()["installed"] is None
+
+
+def test_restart_starts_a_helper_then_closes(bridge, monkeypatch):
+    from src.services import updates
+
+    spawned, quits = [], []
+    monkeypatch.setattr(updates, "spawn_detached", spawned.append)
+    monkeypatch.setattr(bridge, "_quit_soon", lambda: quits.append(True))
+    assert "message" in bridge.restart_app()
+    assert spawned and quits == [True]

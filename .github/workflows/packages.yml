@@ -40,7 +40,7 @@ jobs:
           tag="${tag:-$(gh release view --json tagName -q .tagName)}"
           echo "TAG=$tag" >> "$GITHUB_ENV"
           mkdir -p dist
-          gh release download "$tag" --pattern '*.deb' --pattern '*.rpm' --dir dist
+          gh release download "$tag" --pattern '*.deb' --pattern '*.rpm' --pattern SHA256SUMS --dir dist
           ls -l dist
 
       - name: Import the packages key
@@ -66,6 +66,13 @@ jobs:
       - name: Check the result
         run: |
           test -s site/index.html
+          test -s site/latest.json && cat site/latest.json
+          if [ -n "$GNUPGHOME" ]; then
+            test -s site/rpm/x86_64/repodata/repomd.xml.asc
+            for f in site/rpm/x86_64/*.rpm; do
+              rpm -qp --nosignature --qf '%{RSAHEADER:pgpsig}\n' "$f" | grep -v '(none)'
+            done
+          fi
           test -s site/apt/dists/stable/InRelease   || echo "::warning::apt index is not signed"
           test -s site/apt/dists/stable/Release.gpg || true
           find site -maxdepth 3 -type d | sort

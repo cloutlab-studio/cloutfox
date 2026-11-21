@@ -7,11 +7,13 @@ import contextlib
 import os
 import pathlib
 import sys
+import time
 from collections.abc import Callable
 
 from ..core.container import Container
 from ..core.logging import get_logger
 from ..core.strings import get_string
+from . import instance as instance_mod
 from .bridge import Bridge
 from .push import Pump
 
@@ -22,6 +24,8 @@ ICON = pathlib.Path(__file__).parent.parent / "assets" / "icon.png"
 # Wayland app id and X11 WM_CLASS; the packages' desktop file names it in StartupWMClass.
 APP_ID = "cloutfox"
 WINDOWS_APP_ID = "Cloutlab.CloutFox"
+# Seconds without a renderer crash after which the reload backoff starts over.
+QUIET_RESET = 600
 
 
 def _expose_gc() -> None:
@@ -51,6 +55,9 @@ class _Callbacks(dict):
             super().__setitem__(key, value)
 
 
+_APP = None
+
+
 def _qt_app() -> None:
     """Create the Qt application first so the window gets CloutFox's name and app id."""
     if sys.platform == "win32":
@@ -59,11 +66,42 @@ def _qt_app() -> None:
             import ctypes
 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(WINDOWS_APP_ID)
+    # Qt WebEngine refuses to load once an application exists unless it was
+    # imported first; pywebview imports it only later, in webview.start.
+    import qtpy.QtWebEngineWidgets  # noqa: F401
     from qtpy.QtWidgets import QApplication
 
+    global _APP
     app = QApplication.instance() or QApplication([sys.argv[0]])
     app.setApplicationName("CloutFox")
     app.setDesktopFileName(APP_ID)
+    # PyQt destroys an application nobody references: without this the window
+    # came up in a second one pywebview made, with no app id (no taskbar icon
+    # grouping on Wayland) and with the single-instance server already dead.
+    _APP = app
+
+
+def _quit_on_sigterm() -> None:
+    """Close like the window's X on SIGTERM (logout, `kill`, a package upgrade).
+
+    Python's default handler ends the process at once, so atexit never ran:
+    browsers were left running on their profiles, tabs were not saved and
+    encrypted profiles stayed unpacked. Qt's loop is C code, so a timer lets
+    Python run the handler.
+    """
+    if sys.platform == "win32":
+        return
+    with contextlib.suppress(Exception):
+        import signal
+
+        from qtpy.QtCore import QTimer
+        from qtpy.QtWidgets import QApplication
+
+        signal.signal(signal.SIGTERM, lambda *_: QApplication.quit())
+        app = QApplication.instance()
+        timer = QTimer(app)
+        timer.timeout.connect(lambda: None)
+        timer.start(500)
 
 
 def _allow_sound(window) -> None:
@@ -85,10 +123,16 @@ def _reload_on_crash(window, bridge) -> None:
         from qtpy.QtCore import QTimer
 
         view = window.native.webview
-        quiet = {"count": 0}
+        quiet = {"count": 0, "last": 0.0}
 
         def terminated(status, code) -> None:
             bridge._panel_restarts += 1
+            now = time.monotonic()
+            # A crash after a long quiet spell starts the backoff over: a panel
+            # left open for days must not stop reloading after its fifth crash.
+            if now - quiet["last"] > QUIET_RESET:
+                quiet["count"] = 0
+            quiet["last"] = now
             quiet["count"] += 1
             delay = min(2 ** quiet["count"], 30)
             logger.warning(
@@ -166,10 +210,57 @@ class _PageSender:
             self._relay.script.emit(source)
 
 
+def _before_show(bridge, sender: _PageSender) -> list[Callable]:
+    """What runs once the native window exists.
+
+    pywebview hands the window only to a handler whose parameter is named
+    `window` (it reads the signature), so every handler here takes exactly that.
+    """
+
+    def allow_sound(window) -> None:
+        _allow_sound(window)
+
+    def reload_on_crash(window) -> None:
+        _reload_on_crash(window, bridge)
+
+    def watch_panel(window) -> None:
+        _watch_panel(window, bridge)
+
+    def attach(window) -> None:
+        sender.attach(window)
+
+    return [allow_sound, reload_on_crash, watch_panel, attach]
+
+
+def claim_instance() -> instance_mod.Instance | None:
+    """The Qt application first, then the single-instance channel; None: already running."""
+    _expose_gc()
+    _qt_app()
+    return instance_mod.claim()
+
+
+def _show(window) -> None:
+    """Bring the window forward for a second start of the app."""
+    with contextlib.suppress(Exception):
+        window.restore()
+    with contextlib.suppress(Exception):
+        window.show()
+    with contextlib.suppress(Exception):
+        native = window.native
+        native.raise_()
+        native.activateWindow()
+
+
 class Window:
-    def __init__(self, container: Container, on_unlocked: Callable[[], None]) -> None:
+    def __init__(
+        self,
+        container: Container,
+        on_unlocked: Callable[[], None],
+        instance: instance_mod.Instance | None = None,
+    ) -> None:
         self.c = container
         self.bridge = Bridge(container, on_unlocked)
+        self.instance = instance
 
     def run(self) -> None:
         import webview
@@ -181,6 +272,7 @@ class Window:
             )
         _expose_gc()
         _qt_app()
+        _quit_on_sigterm()
         window = webview.create_window(
             get_string("window_title"),
             str(index),
@@ -196,10 +288,10 @@ class Window:
         pump = Pump(self.c, sender, window)
         pump.on_help = lambda r: self.bridge._log(get_string("help_requested", name=r.profile))
         self.bridge._attach(window, pump)
-        window.events.before_show += _allow_sound
-        window.events.before_show += lambda w: _reload_on_crash(w, self.bridge)
-        window.events.before_show += lambda w: _watch_panel(w, self.bridge)
-        window.events.before_show += sender.attach
+        for handler in _before_show(self.bridge, sender):
+            window.events.before_show += handler
+        if self.instance is not None:
+            self.instance.on_show(lambda: _show(window))
 
         def stay_home() -> None:
             # Only the panel may run in this window: it holds the bridge.

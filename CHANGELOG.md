@@ -1,5 +1,35 @@
 # Changelog
 
+## [3.1.3] - 2026-11-21
+
+### Upgrading
+From 3.1.2 or earlier, update once in the way that fits your copy; after that the button and the system update do the rest.
+
+- **Windows, setup exe for your user** (the default): **Install update** works. The setup closes CloutFox and its browsers, installs 3.1.3 and opens it again. This one time the profiles close without saving their tabs, so stop them first.
+- **Windows, setup exe for all users, or the MSI**: the button in 3.1.2 cannot update these copies and does nothing. Download `CloutFox-3.1.3-setup-x64.exe` or `CloutFox-3.1.3-x64.msi` and run it once.
+- **Windows zip**: close CloutFox, unpack the new zip in place of the old folder. The button in 3.1.2 would install the setup version in a separate folder instead.
+- **Fedora** with the CloutFox repository already added: `sudo dnf upgrade --refresh`. The 3.1.2 packages in it were unsigned and `dnf` refused them; 3.1.3 is signed. Without the repository: **Install update** in the app, or `sudo dnf install ./cloutfox-3.1.3-1.x86_64.rpm`. Then close CloutFox and open it again: 3.1.2 does not restart itself. **openSUSE**: `sudo zypper install ./cloutfox-3.1.3-1.x86_64.rpm`, the button in 3.1.2 needs `dnf`.
+- **Ubuntu, Debian**: `sudo apt update && sudo apt upgrade` if the repository is added; otherwise **Install update** or `sudo apt install ./cloutfox_3.1.3_amd64.deb`. Then close CloutFox and open it again.
+- **AppImage**: **Install update** replaces the file; close CloutFox and open it again.
+- **tar.gz**: download the new archive and unpack it in place of the old folder.
+
+### Added
+- "Install update" finishes the job: after a confirmation CloutFox stops the running profiles (they keep their tabs), installs the new version and opens again. On Windows the setup runs once the app has closed, for the same user or all users as the first install, and an MSI install updates through the MSI; a deb or rpm goes through `apt` or `dnf` behind the password prompt; an AppImage replaces its file. A zip or tar.gz copy gets the release page.
+- Installing the .deb or .rpm adds the CloutFox repository (`software.cloutlab.studio`), so the system update and the software center bring new versions. `repo=no` in `/etc/default/cloutfox` skips it; a deleted repository file stays deleted; removing the package removes the repository.
+- When the system updated CloutFox while it was open, the bar above the list says so and offers "Restart".
+- The update check reads `software.cloutlab.studio/latest.json`, which carries the version and the SHA-256 of every file. The GitHub API is the fallback: it allows 60 requests an hour per address, which a provider's shared address runs out of.
+
+### Fixed
+- The rpm repository served unsigned packages, so `dnf` with `gpgcheck=1` (the command on the repository page) refused to install them, and zypper refused the repository without signed metadata. Packages and `repomd.xml` are signed now, and the workflow fails if they are not.
+- The Windows setup, started from an update in 3.1.2 while CloutFox was open, now stops CloutFox and its browsers first and starts it again afterwards, instead of failing on files in use. On a copy installed for all users (the setup or the MSI) that silent per-user setup stops without installing, so no second copy appears; install 3.1.3 there by hand once.
+- A panel whose renderer crashed stayed blank until the app was restarted. Since 3.1.0 the crash handler and the start watchdog were never attached to the window, so the window looked frozen while profiles kept running behind it. The panel now reloads after a crash again, and the reload limit starts over after ten quiet minutes.
+- Starting CloutFox a second time (a double click on the shortcut, the menu entry while the window is still coming up) opened a second window on the same profiles. That window had no API, both wrote the same profile list, and it removed the first window's one-time profiles. Now the second start brings the open window forward and exits.
+- The window now runs with the CloutFox app id, so on Wayland it groups with its menu entry and shows its own icon.
+- If the API port is taken by another program, the log and the panel say so; before, the log said the API was available.
+- Logging out or `kill` closes CloutFox like the window's close button on Linux: browsers stop and save their tabs, encrypted profiles are packed.
+- The proxy bridge (SOCKS5 with a password, WireGuard, the Chrome engine) checks who owns a connection off its network loop, so pages no longer wait on that check, and Windows remembers the answer per browser process for 30 seconds.
+- The activity log no longer shows Camoufox's warning about a custom fingerprint on every launch.
+
 ## [3.1.2] - 2026-11-16
 
 ### Added
