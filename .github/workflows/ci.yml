@@ -30,6 +30,8 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements*.txt
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libnss3 libxkbfile1 libasound2t64
       - run: python -m pip install -r requirements-dev.txt
       - run: ruff check src tests chrome_engine packaging docs cloutfox_app.py cloutfox_mcp.py
       - run: ruff format --check src tests chrome_engine packaging docs cloutfox_app.py cloutfox_mcp.py
@@ -85,6 +87,8 @@ jobs:
           cache-dependency-path: requirements*.txt
       - run: python -m pip install -r requirements.txt
       - run: python -m camoufox fetch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - run: python tests\e2e\stop_e2e.py
         env:
           CLOUTFOX_E2E_DIR: ${{ github.workspace }}\e2e-data\stop
